@@ -4,15 +4,17 @@ import { PanelDataErrorView } from '@grafana/runtime';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import {
-  createCanvasLineSeries,
   createKChart,
-  createLineSeries,
-  createWebglLineSeries,
-  type KChartAxis,
-  type KChartController,
-  type KChartSeries,
-  type KChartSeriesTooltipContext,
-} from '@keneth80/k-chart';
+} from '@keneth80/k-chart/core/create-kchart';
+import type {
+  KChartAxis,
+  KChartController,
+  KChartSeries,
+  KChartSeriesTooltipContext,
+} from '@keneth80/k-chart/core/contracts';
+import { createCanvasLineSeries } from '@keneth80/k-chart/series/canvas-line';
+import { createLineSeries } from '@keneth80/k-chart/series/svg-line';
+import { createWebglLineSeries } from '@keneth80/k-chart/series/webgl-line';
 import {
   buildKChartDataModel,
   type KChartDataModel,

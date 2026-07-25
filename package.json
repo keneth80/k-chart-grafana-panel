@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint --cache .",
     "lint:fix": "npm run lint -- --fix && prettier --write --list-different .",
+    "bundle:report": "node scripts/report-bundle.cjs",
     "e2e": "playwright test",
     "server": "docker compose up --build",
     "sign": "sign-plugin"
@@ -73,7 +74,7 @@
     "@grafana/runtime": "^13.1.1",
     "@grafana/schema": "^13.1.1",
     "@grafana/ui": "^13.1.1",
-    "@keneth80/k-chart": "^1.20.0",
+    "@keneth80/k-chart": "^1.21.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
