@@ -39,6 +39,8 @@ The adapter does not mutate Grafana data frames.
 4. Open [http://localhost:3000](http://localhost:3000) and select **KChart Panel**.
 
 The Docker development environment permits the unsigned plugin ID `keneth80-kchart-panel`.
+If port 3000 is already in use, run `GRAFANA_PORT=3010 npm run server` and open
+`http://localhost:3010`.
 
 ## Verification
 
