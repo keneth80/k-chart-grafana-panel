@@ -51,6 +51,11 @@ npm run test:ci
 npm run build
 ```
 
+The panel uses concrete KChart core and line-renderer entry points so unrelated
+maps, hierarchy charts, and datasets are not included in the plugin bundle.
+See [Bundle optimization verification](docs/bundle-optimization.md) for the
+measured result, repeatable commands, and a manual Grafana checklist.
+
 ## Current MVP
 
 - SVG, Canvas, and WebGL line renderers

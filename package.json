@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint --cache .",
     "lint:fix": "npm run lint -- --fix && prettier --write --list-different .",
+    "bundle:report": "node scripts/report-bundle.cjs",
     "e2e": "playwright test",
     "server": "docker compose up --build",
     "sign": "sign-plugin"
