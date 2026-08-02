@@ -22,8 +22,6 @@ jobs:
       plugin-version: ${{ steps.metadata.outputs.plugin-version }}
       has-e2e: ${{ steps.check-for-e2e.outputs.has-e2e }}
       has-backend: ${{ steps.check-for-backend.outputs.has-backend }}
-    env:
-      GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -89,10 +87,6 @@ jobs:
             echo "has-e2e=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Sign plugin
-        run: npm run sign
-        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
-
       - name: Get plugin metadata
         id: metadata
         run: |
@@ -108,18 +102,15 @@ jobs:
 
       - name: Package plugin
         id: package-plugin
-        run: |
-          mv dist ${PLUGIN_ID}
-          zip ${ARCHIVE} ${PLUGIN_ID} -r
+        run: npm run package:dist
+
+      - name: Verify package structure
+        run: npm run verify:package -- artifacts/${ARCHIVE}
         env:
           ARCHIVE: ${{ steps.metadata.outputs.archive }}
-          PLUGIN_ID: ${{ steps.metadata.outputs.plugin-id }}
 
-      - name: Check plugin.json
-        run: |
-          docker run --pull=always \
-            -v $PWD/${ARCHIVE}:/archive.zip \
-            grafana/plugin-validator-cli -analyzer=metadatavalid /archive.zip
+      - name: Run full Grafana plugin validator
+        run: npm run validate:plugin:full -- artifacts/${ARCHIVE}
         env:
           ARCHIVE: ${{ steps.metadata.outputs.archive }}
 
@@ -127,7 +118,17 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.metadata.outputs.plugin-id }}-${{ steps.metadata.outputs.plugin-version }}
-          path: ${{ steps.metadata.outputs.plugin-id }}
+          path: artifacts/${{ steps.metadata.outputs.plugin-id }}
+          retention-days: 5
+
+      - name: Archive distribution ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.metadata.outputs.plugin-id }}-${{ steps.metadata.outputs.plugin-version }}-zip
+          path: |
+            artifacts/${{ steps.metadata.outputs.archive }}
+            artifacts/checksums.txt
+            artifacts/package-metadata.json
           retention-days: 5
 
   resolve-versions:
@@ -204,14 +205,20 @@ jobs:
         run: |
           docker logs keneth80-kchart-panel >& grafana-server.log
 
-      - name: Stop grafana docker
-        run: docker compose down
+      - name: Upload E2E test summary
+        uses: grafana/plugin-actions/playwright-gh-pages/upload-report-artifacts@upload-report-artifacts/v1.0.1
+        if: ${{ always() && !cancelled() }}
+        with:
+          test-outcome: ${{ steps.run-tests.outcome }}
 
-      # Uncomment this step to upload the server log to Github artifacts. Remember Github artifacts are public on the Internet if the repository is public.
-      # - name: Upload server log
-      #   uses: actions/upload-artifact@v4
-      #   if: ${{ always() && steps.run-tests.outcome == 'failure' }}
-      #   with:
-      #     name: ${{ matrix.GRAFANA_IMAGE.NAME }}-v${{ matrix.GRAFANA_IMAGE.VERSION }}-${{github.run_id}}-server-log
-      #     path: grafana-server.log
-      #     retention-days: 5
+      - name: Upload Grafana server log
+        uses: actions/upload-artifact@v7
+        if: ${{ always() && !cancelled() && steps.run-tests.outcome == 'failure' }}
+        with:
+          name: ${{ matrix.GRAFANA_IMAGE.NAME }}-v${{ matrix.GRAFANA_IMAGE.VERSION }}-${{ github.run_id }}-server-log
+          path: grafana-server.log
+          retention-days: 5
+
+      - name: Stop grafana docker
+        if: ${{ always() }}
+        run: docker compose down

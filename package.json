@@ -10,6 +10,11 @@
     "lint": "eslint --cache .",
     "lint:fix": "npm run lint -- --fix && prettier --write --list-different .",
     "bundle:report": "node scripts/report-bundle.cjs",
+    "package:dist": "node scripts/package-plugin.cjs",
+    "package:plugin": "npm run build && npm run package:dist",
+    "verify:package": "node scripts/verify-plugin-package.cjs",
+    "validate:plugin": "node scripts/validate-plugin.cjs",
+    "validate:plugin:full": "node scripts/validate-plugin.cjs --docker",
     "e2e": "playwright test",
     "server": "docker compose up --build",
     "sign": "sign-plugin"
