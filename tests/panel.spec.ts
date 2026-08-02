@@ -155,11 +155,12 @@ test('should apply Grafana field styles and KChart axis options', async ({
   if (!canvasBox) {
     throw new Error('Candlestick canvas was not rendered.');
   }
+  const candleTooltip = panel.locator('.kchart-tooltip');
   let candleTooltipVisible = false;
   for (const xRatio of [0.2, 0.35, 0.5, 0.65, 0.8]) {
     for (const yRatio of [0.15, 0.22, 0.3, 0.38]) {
       await page.mouse.move(canvasBox.x + canvasBox.width * xRatio, canvasBox.y + canvasBox.height * yRatio);
-      if (await panel.locator('.kchart-tooltip').isVisible()) {
+      if ((await candleTooltip.textContent())?.includes('%')) {
         candleTooltipVisible = true;
         break;
       }
@@ -169,7 +170,8 @@ test('should apply Grafana field styles and KChart axis options', async ({
     }
   }
   expect(candleTooltipVisible).toBe(true);
-  await expect(panel.locator('.kchart-tooltip')).toContainText('%');
+  await expect(candleTooltip).toBeVisible();
+  await expect(candleTooltip).toContainText('%');
 
   await panelEditPage.getCustomOptions('Thresholds').getSwitch('Show threshold lines').uncheck();
   await expect(panel.locator('g.kchart-fixed-guide-line-y')).toHaveCount(0);
@@ -190,7 +192,12 @@ test('should resolve Grafana Data Links for the hovered chart point', async ({
   await expect(trigger).toContainText('Open data link');
 
   const link = trigger.locator('xpath=..');
-  await expect(link).toHaveAttribute('href', /var-kchart_field=Open/);
+  const href = await link.getAttribute('href');
+  const title = await link.getAttribute('title');
+  const selectedField = title?.replace(/^Inspect /, '');
+
+  expect(selectedField).toMatch(/^(Open|Close)$/);
+  expect(new URL(href ?? '', 'http://localhost').searchParams.get('var-kchart_field')).toBe(selectedField);
   await expect(link).toHaveAttribute('href', /var-kchart_value=\d+/);
   await expect(link).toHaveAttribute('href', /from=\d+/);
   await expect(link).toHaveAttribute('href', /to=\d+/);

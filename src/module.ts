@@ -12,7 +12,8 @@ export const plugin = new PanelPlugin<KChartPanelOptions>(KChartPanel)
       [FieldConfigProperty.Max]: {},
       [FieldConfigProperty.Color]: {},
       [FieldConfigProperty.Thresholds]: {},
-      [FieldConfigProperty.Links]: {},
+      // Grafana 12.3 does not expose the Links standard-option editor at runtime.
+      ...(FieldConfigProperty.Links ? { [FieldConfigProperty.Links]: {} } : {}),
     },
   })
   .setPanelOptions((builder) => {

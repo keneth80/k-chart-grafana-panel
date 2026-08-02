@@ -1025,26 +1025,26 @@ const KChartPanelContent: React.FC<Props> = ({
           {axisWarning}
         </div>
       )}
-      <DataLinksContextMenu
-        links={() => activeDataLinks.links}
-        style={{ position: 'absolute', zIndex: 9, right: 8, bottom: 8 }}
-      >
-        {({ openMenu, targetClassName, triggerProps }) => {
-          const compatibleTriggerProps = resolveDataLinkMenuTriggerProps({ openMenu, triggerProps });
-          return activeDataLinks.links.length > 0 ? (
-            <span
-              {...compatibleTriggerProps}
-              className={`${styles.dataLink} ${compatibleTriggerProps ? styles.dataLinkPosition : ''} ${targetClassName ?? ''}`}
-              data-testid="kchart-data-links"
-            >
-              {activeDataLinks.links.length > 1 ? 'Data links' : 'Open data link'} ·{' '}
-              {activeDataLinks.metric?.displayName}
-            </span>
-          ) : (
-            <span />
-          );
-        }}
-      </DataLinksContextMenu>
+      {activeDataLinks.links.length > 0 && (
+        <DataLinksContextMenu
+          links={() => activeDataLinks.links}
+          style={{ position: 'absolute', zIndex: 9, right: 8, bottom: 8 }}
+        >
+          {({ openMenu, targetClassName, triggerProps }) => {
+            const compatibleTriggerProps = resolveDataLinkMenuTriggerProps({ openMenu, triggerProps });
+            return (
+              <span
+                {...compatibleTriggerProps}
+                className={`${styles.dataLink} ${compatibleTriggerProps ? styles.dataLinkPosition : ''} ${targetClassName ?? ''}`}
+                data-testid="kchart-data-links"
+              >
+                {activeDataLinks.links.length > 1 ? 'Data links' : 'Open data link'} ·{' '}
+                {activeDataLinks.metric?.displayName}
+              </span>
+            );
+          }}
+        </DataLinksContextMenu>
+      )}
       {runtimeIssue && (
         <div className={styles.runtimeError} data-testid="kchart-runtime-error">
           <Alert

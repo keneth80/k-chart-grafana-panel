@@ -35,28 +35,14 @@ const args = useDocker
       process.env.PLUGIN_VALIDATOR_PLATFORM ?? 'linux/amd64',
       '-v',
       `${archivePath}:/archive.zip:ro`,
-      ...(githubSourceUri
-        ? []
-        : [
-            '-v',
-            `${root}:/source_code:ro`,
-            '--tmpfs',
-            '/source_code/node_modules',
-          ]),
+      ...(githubSourceUri ? [] : ['-v', `${root}:/source_code:ro`, '--tmpfs', '/source_code/node_modules']),
       'grafana/plugin-validator-cli',
       '-sourceCodeUri',
       sourceCodeUri,
       ...strictArguments,
       '/archive.zip',
     ]
-  : [
-      '-y',
-      '@grafana/plugin-validator@latest',
-      '-sourceCodeUri',
-      sourceCodeUri,
-      ...strictArguments,
-      archivePath,
-    ];
+  : ['-y', '@grafana/plugin-validator@latest', '-sourceCodeUri', sourceCodeUri, ...strictArguments, archivePath];
 
 const result = spawnSync(command, args, { cwd: root, stdio: 'inherit' });
 if (result.error) {
