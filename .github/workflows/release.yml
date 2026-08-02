@@ -11,19 +11,65 @@ permissions: read-all
 
 jobs:
   release:
+    environment: grafana-release
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
-        # Uncomment to enable plugin signing
-        # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
-        #with:
-        # Make sure to save the token in your repository secrets
-        #policy_token: $
-        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
-        #grafana_token: $
+      - name: Resolve signing mode
+        id: signing
+        env:
+          GRAFANA_SIGN_RELEASES: ${{ vars.GRAFANA_SIGN_RELEASES }}
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+        run: |
+          if [ "$GRAFANA_SIGN_RELEASES" = "true" ]; then
+            if [ -z "$GRAFANA_ACCESS_POLICY_TOKEN" ]; then
+              echo "::error::GRAFANA_ACCESS_POLICY_TOKEN is required when GRAFANA_SIGN_RELEASES=true."
+              exit 1
+            fi
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Creating an unsigned draft release for Grafana's initial plugin review."
+          fi
+
+      - name: Build, optionally sign, attest, and draft release
+        id: build-plugin
+        uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
+        with:
+          policy_token: ${{ steps.signing.outputs.enabled == 'true' && secrets.GRAFANA_ACCESS_POLICY_TOKEN || '' }}
+          node-version: '22'
+          attestation: true
+
+      - name: Verify package structure
+        env:
+          REQUIRE_SIGNED: ${{ steps.signing.outputs.enabled == 'true' && '1' || '0' }}
+        run: npm run verify:package -- "${{ steps.build-plugin.outputs.archive }}"
+
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify "${{ steps.build-plugin.outputs.archive }}" --repo "$GITHUB_REPOSITORY"
+
+      - name: Validate final release archive
+        run: |
+          docker run --pull=always --rm \
+            -v "$PWD/${{ steps.build-plugin.outputs.archive }}:/archive.zip:ro" \
+            grafana/plugin-validator-cli \
+            -sourceCodeUri "https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}" \
+            /archive.zip
+
+      - name: Remove invalid draft release
+        if: ${{ failure() && steps.build-plugin.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi

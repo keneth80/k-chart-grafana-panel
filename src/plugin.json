@@ -7,7 +7,8 @@
     "keywords": ["panel", "kchart", "timeseries", "canvas", "webgl"],
     "description": "Hybrid SVG, Canvas, and WebGL time-series panel powered by KChart.",
     "author": {
-      "name": "Keneth80"
+      "name": "Keneth80",
+      "url": "https://github.com/keneth80"
     },
     "logos": {
       "small": "img/logo.svg",
@@ -15,15 +16,28 @@
     },
     "links": [
       {
-        "name": "KChart",
-        "url": "https://github.com/keneth80/k-chart"
+        "name": "repository",
+        "url": "https://github.com/keneth80/k-chart-grafana-panel"
+      },
+      {
+        "name": "documentation",
+        "url": "https://github.com/keneth80/k-chart-grafana-panel#readme"
+      },
+      {
+        "name": "raise issue",
+        "url": "https://github.com/keneth80/k-chart-grafana-panel/issues"
       },
       {
         "name": "KChart Playground",
         "url": "https://k-chart-playground.vercel.app/"
       }
     ],
-    "screenshots": [],
+    "screenshots": [
+      {
+        "name": "KChart hybrid time-series panel",
+        "path": "img/kchart-panel.png"
+      }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
