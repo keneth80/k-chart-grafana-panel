@@ -19,6 +19,12 @@ if (!fs.existsSync(archivePath)) {
 }
 
 const strictArguments = process.env.PLUGIN_VALIDATOR_STRICT === '1' ? ['-strict'] : [];
+// CI validates the exact public commit. Local Docker keeps the repository layout but hides installed dependencies.
+const githubSourceUri =
+  process.env.GITHUB_REPOSITORY && process.env.GITHUB_SHA
+    ? `${process.env.GITHUB_SERVER_URL ?? 'https://github.com'}/${process.env.GITHUB_REPOSITORY}/tree/${process.env.GITHUB_SHA}`
+    : undefined;
+const sourceCodeUri = githubSourceUri ?? (useDocker ? 'file:///source_code' : pathToFileURL(root).href);
 const command = useDocker ? 'docker' : 'npx';
 const args = useDocker
   ? [
@@ -29,11 +35,17 @@ const args = useDocker
       process.env.PLUGIN_VALIDATOR_PLATFORM ?? 'linux/amd64',
       '-v',
       `${archivePath}:/archive.zip:ro`,
-      '-v',
-      `${root}:/source_code:ro`,
+      ...(githubSourceUri
+        ? []
+        : [
+            '-v',
+            `${root}:/source_code:ro`,
+            '--tmpfs',
+            '/source_code/node_modules',
+          ]),
       'grafana/plugin-validator-cli',
       '-sourceCodeUri',
-      'file:///source_code',
+      sourceCodeUri,
       ...strictArguments,
       '/archive.zip',
     ]
@@ -41,7 +53,7 @@ const args = useDocker
       '-y',
       '@grafana/plugin-validator@latest',
       '-sourceCodeUri',
-      pathToFileURL(root).href,
+      sourceCodeUri,
       ...strictArguments,
       archivePath,
     ];
