@@ -1,6 +1,17 @@
 # Changelog
 
-## 1.0.0 (Unreleased)
+## 1.0.1 (2026-08-17)
+
+- Fixed narrow-panel layout so threshold labels remain fully visible while
+  preserving a usable plot area.
+- Fixed grouped Column charts so the first and last bars stay inside the plot
+  area, including narrow multi-series panels and Grafana time-range edges.
+- Added unit and Grafana E2E regression coverage for threshold-label and Column
+  boundary calculations.
+- Updated transitive build dependencies to patched releases accepted by the
+  Grafana plugin validator.
+
+## 1.0.0 (2026-08-02)
 
 - Added a Grafana panel backed by `@keneth80/k-chart`.
 - Added SVG, Canvas, and WebGL line renderer selection.

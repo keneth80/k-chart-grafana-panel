@@ -135,6 +135,11 @@ test('should apply Grafana field styles and KChart axis options', async ({
   await expect(panel.locator('path.kchart-grafana-series-0')).toHaveCSS('stroke', 'rgb(255, 45, 149)');
   await expect(panel.locator('g.kchart-fixed-guide-line-y')).toHaveCount(1);
   await expect(panel.locator('g.kchart-fixed-guide-line-label')).toContainText('115.0');
+  const panelBox = await panel.boundingBox();
+  const thresholdBox = await panel.locator('g.kchart-fixed-guide-line-label').boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(thresholdBox).not.toBeNull();
+  expect(thresholdBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
 
   await panelEditPage.getStandardOptions().getUnitPicker('Unit').selectOption('Misc > Percent (0-100)');
   await expect(panel.locator('.kchart-axis-left')).toContainText('%');
@@ -144,9 +149,18 @@ test('should apply Grafana field styles and KChart axis options', async ({
 
   const chartType = panelEditPage.getCustomOptions('KChart Panel').getSelect('Chart type');
   await chartType.selectOption('Column');
-  // The first grouped bar is clipped by the time-scale edge. Hover a visible
-  // point so the pointer lands inside KChart's plot-area tooltip overlay.
-  await panel.locator('rect.kchart-grafana-columns').nth(4).hover({ force: true });
+  const columns = panel.locator('rect.kchart-grafana-columns');
+  const columnBoxes = await columns.evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    })
+  );
+  const xAxisBox = await panel.locator('.kchart-axis-bottom path.domain').boundingBox();
+  expect(xAxisBox).not.toBeNull();
+  expect(Math.min(...columnBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(xAxisBox!.x - 1);
+  expect(Math.max(...columnBoxes.map((box) => box.right))).toBeLessThanOrEqual(xAxisBox!.x + xAxisBox!.width + 1);
+  await columns.first().hover({ force: true });
   await expect(panel.locator('.kchart-tooltip')).toContainText('%');
 
   await chartType.selectOption('Candlestick');

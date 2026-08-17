@@ -55,6 +55,14 @@ import {
   sharedYAxisWarning,
 } from '../kchart/fieldConfig';
 import {
+  KCHART_COLUMN_GAP,
+  KCHART_COLUMN_GROUP_WIDTH_RATIO,
+  fitGuideLinesToChartWidth,
+  resolveChartLeftMargin,
+  resolveColumnRenderData,
+  resolveColumnXAxisBounds,
+} from '../kchart/layout';
+import {
   assertWebglRenderSurface,
   readableError,
   renderWithRendererFallback,
@@ -374,8 +382,8 @@ const createChartSeries = (
       displayName: 'Values',
       xField: '__x',
       segments,
-      groupWidthRatio: 0.76,
-      gap: 2,
+      groupWidthRatio: KCHART_COLUMN_GROUP_WIDTH_RATIO,
+      gap: KCHART_COLUMN_GAP,
       radius: 2,
     });
     const groupedTooltip = grouped.tooltip;
@@ -481,19 +489,27 @@ const createAxes = (
   height: number,
   timeRange: TimeRange,
   timeZone: TimeZone,
-  options: KChartPanelOptions
+  options: KChartPanelOptions,
+  leftMargin: number
 ): Array<KChartAxis<KChartPanelPoint>> => {
   const bounds = resolveAxisBounds(domainMetrics);
   const xAxisFormat = options.xAxisFormat ?? 'auto';
   const xTickFormat = (value: unknown) => formatXAxisValue(value, xAxisFormat, model.xField, timeZone, model.xType);
+  const columnBounds =
+    chartType === 'column'
+      ? resolveColumnXAxisBounds(model, timeRange.from.valueOf(), timeRange.to.valueOf(), {
+          plotWidth: Math.max(1, width - leftMargin - 24),
+          segmentCount: domainMetrics.length,
+        })
+      : undefined;
 
   return [
     {
       field: '__x',
       type: model.xType === 'time' ? 'time' : 'number',
       placement: 'bottom',
-      min: model.xType === 'time' ? new Date(timeRange.from.valueOf()) : undefined,
-      max: model.xType === 'time' ? new Date(timeRange.to.valueOf()) : undefined,
+      min: columnBounds?.min ?? (model.xType === 'time' ? new Date(timeRange.from.valueOf()) : undefined),
+      max: columnBounds?.max ?? (model.xType === 'time' ? new Date(timeRange.to.valueOf()) : undefined),
       tickCount: Math.max(2, Math.floor(width / 110)),
       tickFormat: xTickFormat,
       title: options.xAxisTitle?.trim() || undefined,
@@ -582,6 +598,18 @@ const KChartPanelContent: React.FC<Props> = ({
       seriesField: chartType === 'candlestick' ? undefined : options.seriesField,
     });
   }, [chartType, data.series, fieldConfig, options.nullMode, options.seriesField, options.xField, options.yField]);
+  const renderModel = useMemo(() => {
+    if (chartType !== 'column') {
+      return model;
+    }
+    const renderData = resolveColumnRenderData(
+      model.data,
+      model.xType,
+      timeRange.from.valueOf(),
+      timeRange.to.valueOf()
+    );
+    return renderData === model.data ? model : { ...model, data: renderData };
+  }, [chartType, model, timeRange]);
   const candlestickMetrics = useMemo(
     () =>
       chartType === 'candlestick'
@@ -614,7 +642,7 @@ const KChartPanelContent: React.FC<Props> = ({
     () => resolveDataLinks(model.metrics, dataLinkTarget),
     [dataLinkTarget, model.metrics]
   );
-  const renderContextRef = useRef({ model, options, theme, width, height, timeRange, timeZone });
+  const renderContextRef = useRef({ model: renderModel, options, theme, width, height, timeRange, timeZone });
   const renderedSizeRef = useRef({ width, height });
   const xTickCount = Math.max(2, Math.floor(width / 110));
   const yTickCount = Math.max(2, Math.floor(height / 70));
@@ -622,7 +650,7 @@ const KChartPanelContent: React.FC<Props> = ({
   const timeRangeTo = timeRange.to.valueOf();
 
   useLayoutEffect(() => {
-    renderContextRef.current = { model, options, theme, width, height, timeRange, timeZone };
+    renderContextRef.current = { model: renderModel, options, theme, width, height, timeRange, timeZone };
   });
 
   useLayoutEffect(() => {
@@ -661,6 +689,7 @@ const KChartPanelContent: React.FC<Props> = ({
         timeRangeFrom,
         timeRangeTo,
         timeZone,
+        layoutWidth: Math.round(width),
         retryGeneration,
       }),
     [
@@ -691,6 +720,7 @@ const KChartPanelContent: React.FC<Props> = ({
       timeRangeFrom,
       timeRangeTo,
       retryGeneration,
+      width,
     ]
   );
 
@@ -785,6 +815,16 @@ const KChartPanelContent: React.FC<Props> = ({
             context.timeZone,
             handleTooltipTarget
           );
+          const resolvedThresholdGuideLines =
+            renderOptions.showThresholds === false
+              ? []
+              : resolveThresholdGuideLines(context.model, contextDomainMetrics, context.theme);
+          const thresholdGuideLines = fitGuideLinesToChartWidth(resolvedThresholdGuideLines, context.width);
+          const leftMargin = resolveChartLeftMargin(
+            renderOptions.yAxisTitle,
+            thresholdGuideLines,
+            context.width
+          );
           const chart = createKChart<KChartPanelPoint>({
             selector: container,
             data: context.model.data,
@@ -794,7 +834,7 @@ const KChartPanelContent: React.FC<Props> = ({
               top: renderOptions.showLegend ? 54 : 20,
               right: 24,
               bottom: renderOptions.xAxisTitle?.trim() ? 64 : 48,
-              left: renderOptions.yAxisTitle?.trim() ? 76 : 64,
+              left: leftMargin,
             },
             axes: createAxes(
               context.model,
@@ -804,7 +844,8 @@ const KChartPanelContent: React.FC<Props> = ({
               context.height,
               context.timeRange,
               context.timeZone,
-              renderOptions
+              renderOptions,
+              leftMargin
             ),
             series,
             grid: {
@@ -843,10 +884,7 @@ const KChartPanelContent: React.FC<Props> = ({
             },
             guideLines: {
               visible: renderOptions.showThresholds !== false,
-              y:
-                renderOptions.showThresholds === false
-                  ? []
-                  : resolveThresholdGuideLines(context.model, contextDomainMetrics, context.theme),
+              y: thresholdGuideLines,
             },
             animation: renderOptions.animation,
             className: context.theme.isDark ? 'kchart-theme-dark' : 'kchart-theme-light',
@@ -936,16 +974,16 @@ const KChartPanelContent: React.FC<Props> = ({
 
   useEffect(() => {
     const controller = controllerRef.current;
-    if (!controller || renderedDataRef.current === model.data) {
+    if (!controller || renderedDataRef.current === renderModel.data) {
       return;
     }
     try {
-      controller.updateData(model.data);
-      renderedDataRef.current = model.data;
+      controller.updateData(renderModel.data);
+      renderedDataRef.current = renderModel.data;
     } catch (error) {
       recoverFromLifecycleFailure('update', error);
     }
-  }, [model.data, recoverFromLifecycleFailure]);
+  }, [recoverFromLifecycleFailure, renderModel.data]);
 
   useEffect(() => {
     const controller = controllerRef.current;
