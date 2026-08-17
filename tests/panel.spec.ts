@@ -144,7 +144,19 @@ test('should apply Grafana field styles and KChart axis options', async ({
   await panelEditPage.getStandardOptions().getUnitPicker('Unit').selectOption('Misc > Percent (0-100)');
   await expect(panel.locator('.kchart-axis-left')).toContainText('%');
 
-  await panel.locator('path.kchart-grafana-series-0').hover({ force: true });
+  const lineHoverPoint = await panel.locator('path.kchart-grafana-series-0').evaluate((element) => {
+    const path = element as SVGPathElement;
+    const point = path.getPointAtLength(path.getTotalLength() / 2);
+    const matrix = path.getScreenCTM();
+    if (!matrix) {
+      throw new Error('Line series screen transform is unavailable.');
+    }
+    return {
+      x: matrix.a * point.x + matrix.c * point.y + matrix.e,
+      y: matrix.b * point.x + matrix.d * point.y + matrix.f,
+    };
+  });
+  await page.mouse.move(lineHoverPoint.x, lineHoverPoint.y);
   await expect(panel.locator('.kchart-tooltip')).toContainText('%');
 
   const chartType = panelEditPage.getCustomOptions('KChart Panel').getSelect('Chart type');
