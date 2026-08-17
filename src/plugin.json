@@ -24,10 +24,6 @@
         "url": "https://github.com/keneth80/k-chart-grafana-panel#readme"
       },
       {
-        "name": "raise issue",
-        "url": "https://github.com/keneth80/k-chart-grafana-panel/issues"
-      },
-      {
         "name": "KChart Playground",
         "url": "https://k-chart-playground.vercel.app/"
       }

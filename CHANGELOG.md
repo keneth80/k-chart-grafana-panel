@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 (2026-08-18)
+
+- Removed the issue-tracker metadata link that the Grafana catalog validator
+  could not retrieve reliably during the initial plugin review.
+- Preserved the v1.0.1 narrow-panel threshold and Column boundary fixes.
+
 ## 1.0.1 (2026-08-17)
 
 - Fixed narrow-panel layout so threshold labels remain fully visible while
