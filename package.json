@@ -79,7 +79,7 @@
     "@grafana/runtime": "^13.1.1",
     "@grafana/schema": "^13.1.1",
     "@grafana/ui": "^13.1.1",
-    "@keneth80/k-chart": "^1.21.0",
+    "@keneth80/k-chart": "1.26.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
