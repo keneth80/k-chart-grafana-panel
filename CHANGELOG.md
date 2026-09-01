@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Updated `@keneth80/k-chart` from 1.21.0 to 1.26.0, including bounded
+  worker rendering, coalesced zoom updates, and faster numeric LTTB
+  processing.
+- Verified the existing Grafana chart types, renderer fallbacks, field
+  mappings, axis options, and Data Links against KChart 1.26.0.
+- Kept the panel's existing boolean downsampling option on its compatible
+  LTTB behavior; the new pixel-column min/max strategy is available in the
+  dependency for a future panel option update but is not exposed yet.
+
 ## 1.0.2 (2026-08-18)
 
 - Removed the issue-tracker metadata link that the Grafana catalog validator
