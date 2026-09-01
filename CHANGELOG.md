@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 (2026-09-01)
 
 - Updated `@keneth80/k-chart` from 1.21.0 to 1.26.0, including bounded
   worker rendering, coalesced zoom updates, and faster numeric LTTB
