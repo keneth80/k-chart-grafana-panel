@@ -52,4 +52,4 @@ ci/
 .codebase-memory/
 .codex/
 .config/local/
-.cprc.json
+/.cprc.json
