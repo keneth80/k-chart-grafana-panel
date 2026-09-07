@@ -28,8 +28,8 @@
         "uid": "trlxrdZVk"
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 9,
+        "w": 12,
         "x": 0,
         "y": 0
       },
@@ -94,7 +94,7 @@
           "rawFrameContent": "[\n  {\n    \"columns\": [\n      { \"text\": \"Time\", \"type\": \"time\" },\n      { \"text\": \"Open\", \"type\": \"number\" },\n      { \"text\": \"High\", \"type\": \"number\" },\n      { \"text\": \"Low\", \"type\": \"number\" },\n      { \"text\": \"Close\", \"type\": \"number\" }\n    ],\n    \"rows\": [\n      [1609459200000, 102, 108, 99, 106],\n      [1609462800000, 106, 110, 101, 103],\n      [1609466400000, 103, 113, 102, 111],\n      [1609470000000, 111, 116, 108, 114],\n      [1609473600000, 114, 115, 106, 109],\n      [1609477200000, 109, 118, 107, 116],\n      [1609480800000, 116, 122, 113, 119],\n      [1609484400000, 119, 124, 115, 117],\n      [1609488000000, 117, 126, 116, 124]\n    ]\n  }\n]"
         }
       ],
-      "title": "Sample Panel Title",
+      "title": "Line | SVG",
       "type": "keneth80-kchart-panel"
     },
     {
@@ -103,10 +103,215 @@
         "uid": "trlxrdZVk"
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 1,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 3,
+      "options": {
+        "animation": false,
+        "chartType": "area",
+        "curve": true,
+        "downsample": false,
+        "lineWidth": 2,
+        "nullMode": "skip",
+        "renderer": "svg",
+        "showGrid": true,
+        "showLegend": true,
+        "showThresholds": false,
+        "showTooltip": true,
+        "xAxisFormat": "time",
+        "xAxisTitle": "Observed at",
+        "yAxisTitle": "Price"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "refId": "A",
+          "scenarioId": "raw_frame",
+          "rawFrameContent": "[\n  {\n    \"columns\": [\n      { \"text\": \"Time\", \"type\": \"time\" },\n      { \"text\": \"Open\", \"type\": \"number\" },\n      { \"text\": \"High\", \"type\": \"number\" },\n      { \"text\": \"Low\", \"type\": \"number\" },\n      { \"text\": \"Close\", \"type\": \"number\" }\n    ],\n    \"rows\": [\n      [1609459200000, 102, 108, 99, 106],\n      [1609462800000, 106, 110, 101, 103],\n      [1609466400000, 103, 113, 102, 111],\n      [1609470000000, 111, 116, 108, 114],\n      [1609473600000, 114, 115, 106, 109],\n      [1609477200000, 109, 118, 107, 116],\n      [1609480800000, 116, 122, 113, 119],\n      [1609484400000, 119, 124, 115, 117],\n      [1609488000000, 117, 126, 116, 124]\n    ]\n  }\n]"
+        }
+      ],
+      "title": "Area | SVG",
+      "type": "keneth80-kchart-panel"
+    },
+    {
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "gridPos": {
+        "h": 9,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 1,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 4,
+      "options": {
+        "animation": false,
+        "chartType": "column",
+        "curve": false,
+        "downsample": false,
+        "lineWidth": 2,
+        "nullMode": "skip",
+        "renderer": "svg",
+        "showGrid": true,
+        "showLegend": true,
+        "showThresholds": false,
+        "showTooltip": true,
+        "xAxisFormat": "time",
+        "xAxisTitle": "Observed at",
+        "yAxisTitle": "Price"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "refId": "A",
+          "scenarioId": "raw_frame",
+          "rawFrameContent": "[\n  {\n    \"columns\": [\n      { \"text\": \"Time\", \"type\": \"time\" },\n      { \"text\": \"Open\", \"type\": \"number\" },\n      { \"text\": \"High\", \"type\": \"number\" },\n      { \"text\": \"Low\", \"type\": \"number\" },\n      { \"text\": \"Close\", \"type\": \"number\" }\n    ],\n    \"rows\": [\n      [1609459200000, 102, 108, 99, 106],\n      [1609462800000, 106, 110, 101, 103],\n      [1609466400000, 103, 113, 102, 111],\n      [1609470000000, 111, 116, 108, 114],\n      [1609473600000, 114, 115, 106, 109],\n      [1609477200000, 109, 118, 107, 116],\n      [1609480800000, 116, 122, 113, 119],\n      [1609484400000, 119, 124, 115, 117],\n      [1609488000000, 117, 126, 116, 124]\n    ]\n  }\n]"
+        }
+      ],
+      "title": "Column | SVG",
+      "type": "keneth80-kchart-panel"
+    },
+    {
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 1,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 5,
+      "options": {
+        "animation": false,
+        "chartType": "scatter",
+        "curve": false,
+        "downsample": false,
+        "lineWidth": 2,
+        "nullMode": "skip",
+        "renderer": "webgl",
+        "showGrid": true,
+        "showLegend": true,
+        "showThresholds": false,
+        "showTooltip": true,
+        "xAxisFormat": "time",
+        "xAxisTitle": "Observed at",
+        "yAxisTitle": "Price"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "refId": "A",
+          "scenarioId": "raw_frame",
+          "rawFrameContent": "[\n  {\n    \"columns\": [\n      { \"text\": \"Time\", \"type\": \"time\" },\n      { \"text\": \"Open\", \"type\": \"number\" },\n      { \"text\": \"High\", \"type\": \"number\" },\n      { \"text\": \"Low\", \"type\": \"number\" },\n      { \"text\": \"Close\", \"type\": \"number\" }\n    ],\n    \"rows\": [\n      [1609459200000, 102, 108, 99, 106],\n      [1609462800000, 106, 110, 101, 103],\n      [1609466400000, 103, 113, 102, 111],\n      [1609470000000, 111, 116, 108, 114],\n      [1609473600000, 114, 115, 106, 109],\n      [1609477200000, 109, 118, 107, 116],\n      [1609480800000, 116, 122, 113, 119],\n      [1609484400000, 119, 124, 115, 117],\n      [1609488000000, 117, 126, 116, 124]\n    ]\n  }\n]"
+        }
+      ],
+      "title": "Scatter | WebGL",
+      "type": "keneth80-kchart-panel"
+    },
+    {
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 6,
+      "options": {
+        "animation": false,
+        "chartType": "candlestick",
+        "curve": false,
+        "downsample": false,
+        "lineWidth": 2,
+        "nullMode": "skip",
+        "renderer": "canvas",
+        "showGrid": true,
+        "showLegend": true,
+        "showThresholds": false,
+        "showTooltip": true,
+        "xAxisFormat": "time",
+        "xAxisTitle": "Observed at",
+        "yAxisTitle": "Price"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "refId": "A",
+          "scenarioId": "raw_frame",
+          "rawFrameContent": "[\n  {\n    \"columns\": [\n      { \"text\": \"Time\", \"type\": \"time\" },\n      { \"text\": \"Open\", \"type\": \"number\" },\n      { \"text\": \"High\", \"type\": \"number\" },\n      { \"text\": \"Low\", \"type\": \"number\" },\n      { \"text\": \"Close\", \"type\": \"number\" }\n    ],\n    \"rows\": [\n      [1609459200000, 102, 108, 99, 106],\n      [1609462800000, 106, 110, 101, 103],\n      [1609466400000, 103, 113, 102, 111],\n      [1609470000000, 111, 116, 108, 114],\n      [1609473600000, 114, 115, 106, 109],\n      [1609477200000, 109, 118, 107, 116],\n      [1609480800000, 116, 122, 113, 119],\n      [1609484400000, 119, 124, 115, 117],\n      [1609488000000, 117, 126, 116, 124]\n    ]\n  }\n]"
+        }
+      ],
+      "title": "Candlestick | Canvas",
+      "type": "keneth80-kchart-panel"
+    },
+    {
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 18
       },
       "fieldConfig": {
         "defaults": {},
@@ -138,7 +343,7 @@
           "scenarioId": "no_data_points"
         }
       ],
-      "title": "Sample Panel Title",
+      "title": "No data state",
       "type": "keneth80-kchart-panel"
     }
   ],
@@ -156,6 +361,6 @@
   "timezone": "",
   "title": "Provisioned KChart Panel dashboard",
   "uid": "a538aeff-5a8a-42a5-901c-938d896fdd6f",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

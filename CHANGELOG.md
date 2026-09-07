@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.4 (2026-09-07)
+
+- Expanded the provisioned dashboard with working Line, Area, Column, Scatter,
+  and Candlestick examples using compatible SVG, WebGL, and Canvas renderers.
+- Added deterministic coverage that keeps the complete supported chart example
+  set and its renderer assignments from drifting.
+- Documented the provisioned example dashboard for local plugin evaluation.
+- Updated transitive `fast-uri` and `qs` packages to releases accepted by the
+  current Grafana security validator.
+
 ## 1.0.3 (2026-09-01)
 
 - Updated `@keneth80/k-chart` from 1.21.0 to 1.26.0, including bounded

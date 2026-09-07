@@ -148,6 +148,10 @@ complete that path.
 
 4. Open [http://localhost:3000](http://localhost:3000) and select **KChart Panel**.
 
+The provisioned **Provisioned KChart Panel dashboard** includes Line, Area,
+Column, Scatter, and Candlestick examples using their compatible SVG, WebGL,
+and Canvas renderers.
+
 The Docker development environment permits the unsigned plugin ID `keneth80-kchart-panel`.
 If port 3000 is already in use, run `GRAFANA_PORT=3010 npm run server` and open
 `http://localhost:3010`.
