@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.5 (2026-10-25)
+
+- Reissued the approved plugin through the protected Grafana release
+  environment so the catalog package includes its cryptographic signature.
+- Updated vulnerable transitive build dependencies required by the current
+  Grafana plugin validator without changing the runtime bundle.
+- Preserved the chart behavior and runtime dependency versions from 1.0.4.
+
 ## 1.0.4 (2026-09-07)
 
 - Expanded the provisioned dashboard with working Line, Area, Column, Scatter,
