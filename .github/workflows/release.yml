@@ -41,7 +41,7 @@ jobs:
 
       - name: Build, optionally sign, attest, and draft release
         id: build-plugin
-        uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
+        uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
           policy_token: ${{ steps.signing.outputs.enabled == 'true' && secrets.GRAFANA_ACCESS_POLICY_TOKEN || '' }}
           node-version: '22'
