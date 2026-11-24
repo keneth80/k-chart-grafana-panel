@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8 (2026-11-24)
+
+- Fixed the Grafana 12.3 release browser gate by keeping its plugin editor in
+  the desktop layout where the options pane remains visible.
+
 ## 1.0.7 (2026-11-24)
 
 - Serialized the Grafana 12.3 release browser suite to avoid the minimum

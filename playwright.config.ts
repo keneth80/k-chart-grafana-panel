@@ -46,6 +46,10 @@ export default defineConfig<PluginOptions>({
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'playwright/.auth/admin.json',
+        // Grafana 12.3 hides the options pane at the default 1280px viewport
+        // when its docked navigation is open. Keep the release test in the
+        // desktop editor layout that plugin users configure against.
+        viewport: { width: 1600, height: 900 },
       },
       dependencies: ['auth'],
     },
