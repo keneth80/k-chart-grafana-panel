@@ -1,5 +1,5 @@
 import { FieldType, toDataFrame } from '@grafana/data';
-import { buildKChartDataModel } from './dataFrame';
+import { buildKChartDataModel, getFiniteMetricPoints } from './dataFrame';
 
 describe('buildKChartDataModel', () => {
   it('converts Grafana time and numeric fields into KChart rows', () => {
@@ -186,6 +186,119 @@ describe('buildKChartDataModel', () => {
     expect(buildKChartDataModel([frame], 'skip').data).toEqual([
       { __x: new Date(1000), __kchart_baseline: 0, __metric_0: 9 },
     ]);
+  });
+
+  it('preserves duplicate numeric X values for scatter-style data', () => {
+    const frame = toDataFrame({
+      fields: [
+        { name: 'X', type: FieldType.number, values: [1, 1, 2] },
+        { name: 'Y', type: FieldType.number, values: [10, 30, 20] },
+      ],
+    });
+
+    const model = buildKChartDataModel([frame], 'skip', {
+      xField: 'X',
+      yField: 'Y',
+      preserveDuplicateX: true,
+    });
+
+    expect(model.data).toEqual([
+      { __x: 1, __kchart_baseline: 0, __metric_0: 10 },
+      { __x: 1, __kchart_baseline: 0, __metric_0: 30 },
+      { __x: 2, __kchart_baseline: 0, __metric_0: 20 },
+    ]);
+  });
+
+  it('sorts out-of-order source rows while preserving duplicate X ordering', () => {
+    const frame = toDataFrame({
+      fields: [
+        { name: 'X', type: FieldType.number, values: [3, 1, 1, 2] },
+        { name: 'Y', type: FieldType.number, values: [30, 10, 11, 20] },
+      ],
+    });
+
+    const model = buildKChartDataModel([frame], 'skip', {
+      xField: 'X',
+      yField: 'Y',
+      preserveDuplicateX: true,
+    });
+
+    expect(model.data.map((point) => [point.__x, point.__metric_0])).toEqual([
+      [1, 10],
+      [1, 11],
+      [2, 20],
+      [3, 30],
+    ]);
+  });
+
+  it('tracks whether any finite metric value is available without removing null gaps', () => {
+    const emptyFrame = toDataFrame({
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [1000, 2000] },
+        { name: 'Value', type: FieldType.number, values: [null, Number.NaN] },
+      ],
+    });
+    const mixedFrame = toDataFrame({
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [1000, 2000] },
+        { name: 'Value', type: FieldType.number, values: [null, 7] },
+      ],
+    });
+
+    const emptyModel = buildKChartDataModel([emptyFrame], 'skip');
+    expect(emptyModel.hasFiniteData).toBe(false);
+    expect(emptyModel.data).toHaveLength(2);
+    expect(buildKChartDataModel([mixedFrame], 'skip').hasFiniteData).toBe(true);
+  });
+
+  it('derives finite-data state and tooltip points from final duplicate-X values', () => {
+    const frame = toDataFrame({
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [1000, 1000] },
+        { name: 'Value', type: FieldType.number, values: [7, null] },
+      ],
+    });
+
+    const model = buildKChartDataModel([frame], 'skip');
+
+    expect(model.data).toEqual([{ __x: new Date(1000), __kchart_baseline: 0, __metric_0: undefined }]);
+    expect(model.hasFiniteData).toBe(false);
+    expect(model.metrics[0].finitePoints).toEqual([]);
+  });
+
+  it('precomputes finite tooltip points and only caches by-value color statistics', () => {
+    const frame = toDataFrame({
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [1000, 2000, 3000] },
+        {
+          name: 'Threshold color',
+          type: FieldType.number,
+          values: [40, null, 90],
+          config: { color: { mode: 'thresholds', seriesBy: 'max' } },
+        },
+        {
+          name: 'Palette color',
+          type: FieldType.number,
+          values: [5, 6, 7],
+          config: { color: { mode: 'palette-classic' } },
+        },
+        {
+          name: 'Fixed color',
+          type: FieldType.number,
+          values: [1, 2, 3],
+          config: { color: { mode: 'fixed', fixedColor: 'red' } },
+        },
+      ],
+    });
+
+    const model = buildKChartDataModel([frame], 'skip');
+
+    expect(model.metrics[0].finitePoints).toEqual([model.data[0], model.data[2]]);
+    expect(getFiniteMetricPoints(model.data, model.metrics[0].key)).toBe(model.metrics[0].finitePoints);
+    expect(model.metrics[0].colorValue).toBe(90);
+    expect(model.metrics[1].finitePoints).toEqual(model.data);
+    expect(model.metrics[1].colorValue).toBeUndefined();
+    expect(model.metrics[2].colorValue).toBeUndefined();
   });
 
   it('uses explicitly selected numeric X and Y fields', () => {

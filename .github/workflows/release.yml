@@ -1,26 +1,188 @@
-# This GitHub Action automates the process of building Grafana plugins.
-# (For more information, see https://github.com/grafana/plugin-actions/blob/main/build-plugin/README.md)
 name: Release
 
 on:
   push:
     tags:
-      - 'v*' # Run workflow on version tags, e.g. v1.0.0.
+      - 'v*'
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
+  quality:
+    name: Release quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLUGIN_VALIDATOR_IMAGE: grafana/plugin-validator-cli@sha256:42448608c18b8f35e399d9b0a6b95e2dfb9e4b3490b45ac566ded2cdde71f0fc
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact tagged commit checkout
+        env:
+          TAGGED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$TAGGED_SHA"
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Verify release tag
+        run: node scripts/verify-release-tag.cjs "$GITHUB_REF_NAME"
+
+      - name: Test release tag validation
+        run: node --test scripts/verify-release-tag.test.cjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check types
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package plugin
+        run: npm run package:dist
+
+      - name: Resolve package path
+        id: package
+        run: |
+          archive="artifacts/$(node -p 'require("./artifacts/package-metadata.json").archive')"
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package structure
+        run: npm run verify:package -- "${{ steps.package.outputs.archive }}"
+
+      - name: Run full Grafana plugin validator
+        run: npm run validate:plugin:full -- "${{ steps.package.outputs.archive }}"
+
+  release-e2e:
+    name: Grafana E2E (${{ matrix.label }})
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: minimum-12.3.0
+            grafana_image: grafana-enterprise
+            grafana_version: 12.3.0@sha256:96a793a92c9a77cf543d6e5c55100cd296ed9e22487dc3d069331364c456247b
+            report_version: 12.3.0
+          - label: current-13.1.1
+            grafana_image: grafana-enterprise
+            grafana_version: 13.1.1@sha256:892fc2c021a2727b68c9668c0f61832d14c624745a7f83214fb3d66110bb7d31
+            report_version: 13.1.1
+    env:
+      ANONYMOUS_AUTH_ENABLED: 'false'
+      DEVELOPMENT: 'false'
+      GRAFANA_IMAGE: ${{ matrix.grafana_image }}
+      GRAFANA_VERSION: ${{ matrix.grafana_version }}
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact tagged commit checkout
+        env:
+          TAGGED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$TAGGED_SHA"
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Start pinned Grafana for release E2E
+        run: |
+          docker compose build --pull grafana
+          docker compose up -d --no-build grafana
+
+      - name: Wait for Grafana
+        uses: grafana/plugin-actions/wait-for-grafana@c8ad89b7d81f8cb9967bb65e444d85f5b3d7c674 # wait-for-grafana/v1.0.2
+        with:
+          url: http://localhost:3000/login
+
+      - name: Install Playwright Chromium
+        run: npm exec playwright install chromium --with-deps
+
+      - name: Run Grafana Playwright tests
+        id: run-tests
+        run: npm run e2e -- --workers=4
+
+      - name: Capture Grafana logs on failure
+        if: ${{ failure() }}
+        run: docker compose logs --no-color grafana > grafana-server.log || true
+
+      - name: Upload E2E test summary
+        if: ${{ always() && !cancelled() && (steps.run-tests.outcome == 'success' || steps.run-tests.outcome == 'failure') }}
+        uses: grafana/plugin-actions/playwright-gh-pages/upload-report-artifacts@fa3356df288e68f5e900ab466e98b0bf9bad3118 # upload-report-artifacts/v1.0.1
+        with:
+          test-outcome: ${{ steps.run-tests.outcome }}
+          grafana-image: ${{ matrix.grafana_image }}
+          grafana-version: ${{ matrix.report_version }}
+
+      - name: Upload Grafana server log
+        if: ${{ always() && !cancelled() && hashFiles('grafana-server.log') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-${{ github.sha }}-${{ matrix.label }}-grafana-server-log
+          path: grafana-server.log
+          retention-days: 5
+
+      - name: Stop Grafana
+        if: ${{ always() }}
+        run: docker compose down --volumes --remove-orphans
+
   release:
+    name: Sign, attest and draft release
+    needs: [quality, release-e2e]
     environment: grafana-release
     permissions:
       contents: write
       id-token: write
       attestations: write
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLUGIN_VALIDATOR_IMAGE: grafana/plugin-validator-cli@sha256:42448608c18b8f35e399d9b0a6b95e2dfb9e4b3490b45ac566ded2cdde71f0fc
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout release commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Verify release tag
+        run: node scripts/verify-release-tag.cjs "$GITHUB_REF_NAME"
 
       - name: Resolve signing mode
         id: signing
@@ -39,37 +201,98 @@ jobs:
             echo "Creating an unsigned draft release for Grafana's initial plugin review."
           fi
 
-      - name: Build, optionally sign, attest, and draft release
-        id: build-plugin
-        uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
-        with:
-          policy_token: ${{ steps.signing.outputs.enabled == 'true' && secrets.GRAFANA_ACCESS_POLICY_TOKEN || '' }}
-          node-version: '22'
-          attestation: true
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Sign plugin
+        if: ${{ steps.signing.outputs.enabled == 'true' }}
+        env:
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+        run: npm run sign
+
+      - name: Package plugin
+        run: npm run package:dist
+
+      - name: Resolve package paths
+        id: package
+        run: |
+          archive="artifacts/$(node -p 'require("./artifacts/package-metadata.json").archive')"
+          sha1="${archive}.sha1"
+          sha1sum "$archive" | cut -d ' ' -f 1 > "$sha1"
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+          printf 'sha1=%s\n' "$sha1" >> "$GITHUB_OUTPUT"
 
       - name: Verify package structure
         env:
           REQUIRE_SIGNED: ${{ steps.signing.outputs.enabled == 'true' && '1' || '0' }}
-        run: npm run verify:package -- "${{ steps.build-plugin.outputs.archive }}"
-
-      - name: Verify build provenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh attestation verify "${{ steps.build-plugin.outputs.archive }}" --repo "$GITHUB_REPOSITORY"
+        run: npm run verify:package -- "${{ steps.package.outputs.archive }}"
 
       - name: Validate final release archive
-        run: |
-          docker run --pull=always --rm \
-            -v "$PWD/${{ steps.build-plugin.outputs.archive }}:/archive.zip:ro" \
-            grafana/plugin-validator-cli \
-            -sourceCodeUri "https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}" \
-            /archive.zip
+        env:
+          PLUGIN_VALIDATOR_STRICT: '1'
+        run: npm run validate:plugin:full -- "${{ steps.package.outputs.archive }}"
 
-      - name: Remove invalid draft release
-        if: ${{ failure() && steps.build-plugin.outcome == 'success' }}
+      - name: Ensure release does not already exist
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release delete "$GITHUB_REF_NAME" --yes
+            echo "::error::A release already exists for $GITHUB_REF_NAME."
+            exit 1
           fi
+
+      - name: Generate build provenance attestation
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
+          create-storage-record: false
+
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify "${{ steps.package.outputs.archive }}" --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify remote tag still targets this commit
+        run: |
+          verification_ref="refs/release-verification/$GITHUB_RUN_ID"
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:$verification_ref"
+          resolved_sha="$(git rev-parse "$verification_ref^{commit}")"
+          git update-ref -d "$verification_ref"
+          if [ "$resolved_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::Remote tag $GITHUB_REF_NAME moved from $GITHUB_SHA to $resolved_sha."
+            exit 1
+          fi
+
+      - name: Create draft release
+        id: create-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --generate-notes \
+            --notes "Built, validated, and attested from commit $GITHUB_SHA." \
+            --title "$GITHUB_REF_NAME" \
+            --verify-tag
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release assets
+        env:
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+          ARCHIVE_SHA1: ${{ steps.package.outputs.sha1 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "$ARCHIVE" \
+            "$ARCHIVE_SHA1" \
+            artifacts/checksums.txt \
+            artifacts/package-metadata.json
+
+      - name: Remove incomplete draft release
+        if: ${{ failure() && steps.create-release.outputs.created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "$GITHUB_REF_NAME" --yes

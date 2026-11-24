@@ -63,6 +63,11 @@ The **Axes** group adds optional X/Y titles and an X-axis label format (`Auto`,
 time, date, date-time, or number). Time labels use the active Grafana dashboard
 timezone.
 
+The **Interaction** group can opt into **Drag to zoom dashboard time range**.
+When enabled on a time-axis chart, dragging a horizontal range updates Grafana's
+dashboard time picker through the standard panel API. The option is disabled by
+default so existing dashboards keep their current selection behavior.
+
 KChart Panel currently uses one shared Y-axis. Fields on the same panel should
 therefore use compatible units; mixed units render a warning instead of
 silently implying that the first field's unit applies to every series. Separate
@@ -126,6 +131,21 @@ data. Asynchronous worker and animation failures that KChart handles internally
 cannot yet be surfaced by the plugin; a future KChart core error callback will
 complete that path.
 
+## Large datasets
+
+Enable **Downsampling** to reduce the number of points sent to the renderer.
+KChart Panel exposes the strategies provided by KChart 1.28:
+
+- **Auto (recommended)** selects pixel-column min/max for compatible sorted
+  numeric or time data and safely falls back when that path is not applicable.
+- **Pixel min/max** preserves local extrema within each horizontal pixel column.
+- **LTTB** preserves the overall visual shape with a fixed sample budget.
+
+**Points per pixel** controls the rendering density and is clamped to a safe
+range. Existing dashboards that only stored the earlier boolean downsampling
+option keep their prior **LTTB** behavior. Newly configured panels use the
+explicit **Auto** default.
+
 ## Getting started
 
 1. Install dependencies:
@@ -185,7 +205,8 @@ measured result, repeatable commands, and a manual Grafana checklist.
 - Multiple numeric fields and data frames
 - Grafana dark/light theme styling
 - Legend selection, tooltip, grid, curve, animation, and line width options
-- Optional KChart LTTB downsampling
+- Optional adaptive KChart downsampling with Auto, pixel min/max, and LTTB strategies
+- Opt-in drag selection that updates the Grafana dashboard time range
 - `updateData`, `resize`, and `destroy` lifecycle integration
 
 Maps, Three.js, CesiumJS, annotations, alert-state overlays, and Grafana field

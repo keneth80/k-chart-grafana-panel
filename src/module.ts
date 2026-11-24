@@ -1,6 +1,7 @@
 import { FieldConfigProperty, FieldType, PanelPlugin } from '@grafana/data';
 import type { KChartPanelOptions } from './types';
 import { KChartPanel } from './components/KChartPanel';
+import { migrateLegacyPanelOptions } from './kchart/optionsMigration';
 
 export const plugin = new PanelPlugin<KChartPanelOptions>(KChartPanel)
   .useFieldConfig({
@@ -16,6 +17,7 @@ export const plugin = new PanelPlugin<KChartPanelOptions>(KChartPanel)
       ...(FieldConfigProperty.Links ? { [FieldConfigProperty.Links]: {} } : {}),
     },
   })
+  .setMigrationHandler(({ options }) => migrateLegacyPanelOptions(options))
   .setPanelOptions((builder) => {
     return builder
       .addSelect({
@@ -148,6 +150,13 @@ export const plugin = new PanelPlugin<KChartPanelOptions>(KChartPanel)
         name: 'Show tooltip',
         defaultValue: true,
       })
+      .addBooleanSwitch({
+        path: 'enableTimeRangeZoom',
+        name: 'Drag to zoom time range',
+        description: 'Select a horizontal region to update the Grafana dashboard time range.',
+        category: ['Interaction'],
+        defaultValue: false,
+      })
       .addTextInput({
         path: 'xAxisTitle',
         name: 'X-axis title',
@@ -206,10 +215,40 @@ export const plugin = new PanelPlugin<KChartPanelOptions>(KChartPanel)
       })
       .addBooleanSwitch({
         path: 'downsample',
-        name: 'LTTB downsampling',
-        description: 'Reduce dense Line and Area data while preserving visible peaks.',
+        name: 'Enable downsampling',
+        description: 'Reduce dense Line and Area data before rendering.',
         defaultValue: false,
         showIf: (options) => (options.chartType ?? 'line') === 'line' || options.chartType === 'area',
+      })
+      .addRadio({
+        path: 'downsampleStrategy',
+        name: 'Downsampling strategy',
+        description: 'Auto uses pixel-column min/max when safe and falls back to LTTB for unsupported data.',
+        defaultValue: 'auto',
+        showIf: (options) =>
+          Boolean(options.downsample) && ((options.chartType ?? 'line') === 'line' || options.chartType === 'area'),
+        settings: {
+          options: [
+            { value: 'auto', label: 'Auto (recommended)' },
+            { value: 'min-max', label: 'Pixel min/max' },
+            { value: 'lttb', label: 'LTTB' },
+          ],
+        },
+      })
+      .addSliderInput({
+        path: 'downsamplePointsPerPixel',
+        name: 'Points per pixel',
+        description: 'Start pixel-column downsampling when the visible density exceeds this value.',
+        defaultValue: 4,
+        showIf: (options) =>
+          Boolean(options.downsample) &&
+          (options.downsampleStrategy ?? 'auto') !== 'lttb' &&
+          ((options.chartType ?? 'line') === 'line' || options.chartType === 'area'),
+        settings: {
+          min: 1,
+          max: 12,
+          step: 1,
+        },
       })
       .addSliderInput({
         path: 'lineWidth',

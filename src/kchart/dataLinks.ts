@@ -53,8 +53,22 @@ export const resolveDataLinkMenuTriggerProps = ({
 export const pointXKey = (point: KChartPanelPoint): number =>
   point.__x instanceof Date ? point.__x.getTime() : point.__x;
 
+const pointIdentities = new WeakMap<KChartPanelPoint, number>();
+let nextPointIdentity = 0;
+
+const pointIdentity = (point: KChartPanelPoint): number => {
+  const existing = pointIdentities.get(point);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const identity = nextPointIdentity;
+  nextPointIdentity += 1;
+  pointIdentities.set(point, identity);
+  return identity;
+};
+
 export const dataLinkTargetKey = (target: KChartDataLinkTarget): string =>
-  `${target.metricKey}:${pointXKey(target.data)}`;
+  `${target.metricKey}:${pointXKey(target.data)}:${pointIdentity(target.data)}`;
 
 export const resolveDataLinks = (
   metrics: KChartMetric[],
@@ -65,7 +79,9 @@ export const resolveDataLinks = (
   }
 
   const metric = metrics.find((item) => item.key === target.metricKey);
-  const rowIndex = metric?.linkRowByX?.get(pointXKey(target.data));
+  const rowIndex = metric?.linkRowByPoint
+    ? metric.linkRowByPoint.get(target.data)
+    : metric?.linkRowByX?.get(pointXKey(target.data));
   if (!metric?.getLinks || rowIndex === undefined) {
     return { config: metric?.linkConfig ?? {}, links: [], metric };
   }

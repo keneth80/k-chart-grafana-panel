@@ -8,6 +8,7 @@ import {
 
 const model = (xType: KChartDataModel['xType'], values: Array<Date | number>): KChartDataModel => ({
   xType,
+  hasFiniteData: values.length > 0,
   metrics: [],
   data: values.map((value): KChartPanelPoint => ({ __x: value })),
 });
@@ -70,9 +71,7 @@ describe('KChart panel layout', () => {
     const nominalGroupWidth = (48 / 3) * 0.76;
     const actualGroupWidth = 2 * 8 + 2 * 7;
     expect(((0 - min) / (max - min)) * 48).toBeGreaterThanOrEqual(nominalGroupWidth / 2 - 1e-3);
-    expect(((max - 20) / (max - min)) * 48).toBeGreaterThanOrEqual(
-      actualGroupWidth - nominalGroupWidth / 2 - 1e-3
-    );
+    expect(((max - 20) / (max - min)) * 48).toBeGreaterThanOrEqual(actualGroupWidth - nominalGroupWidth / 2 - 1e-3);
   });
 
   it('ignores datasource samples outside the selected Grafana time range', () => {

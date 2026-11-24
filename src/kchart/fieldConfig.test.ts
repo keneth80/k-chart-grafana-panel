@@ -18,6 +18,7 @@ const metric = (overrides: Partial<KChartMetric> = {}): KChartMetric => ({
 
 const model = (resolvedMetric: KChartMetric, values: number[]): KChartDataModel => ({
   xType: 'number',
+  hasFiniteData: values.some(Number.isFinite),
   metrics: [resolvedMetric],
   data: values.map((value, index) => ({ __x: index, __kchart_baseline: 0, [resolvedMetric.key]: value })),
 });

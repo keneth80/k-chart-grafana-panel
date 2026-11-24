@@ -17,7 +17,18 @@ describe('Grafana data link adapter', () => {
   it('normalizes numeric and Date X values to stable lookup keys', () => {
     expect(pointXKey(point(1_000))).toBe(1_000);
     expect(pointXKey(point(new Date(1_000)))).toBe(1_000);
-    expect(dataLinkTargetKey({ metricKey: '__metric_0', data: point(new Date(1_000)) })).toBe('__metric_0:1000');
+    expect(dataLinkTargetKey({ metricKey: '__metric_0', data: point(new Date(1_000)) })).toMatch(
+      /^__metric_0:1000:\d+$/
+    );
+  });
+
+  it('keeps duplicate X points addressable as separate data-link targets', () => {
+    const first = point(1_000);
+    const second = point(1_000);
+
+    expect(dataLinkTargetKey({ metricKey: '__metric_0', data: first })).not.toBe(
+      dataLinkTargetKey({ metricKey: '__metric_0', data: second })
+    );
   });
 
   it('resolves links with the original Grafana row index', () => {
@@ -39,6 +50,34 @@ describe('Grafana data link adapter', () => {
   it('returns no links when the point cannot be mapped to a source row', () => {
     const resolvedMetric = metric(jest.fn(() => []));
     expect(resolveDataLinks([resolvedMetric], { metricKey: resolvedMetric.key, data: point(2_000) }).links).toEqual([]);
+  });
+
+  it('prefers point provenance when duplicate X values map to different source rows', () => {
+    const first = point(1_000);
+    const second = point(1_000);
+    const getLinks = jest.fn(() => []);
+    const resolvedMetric = metric(getLinks);
+    resolvedMetric.linkRowByPoint = new WeakMap([
+      [first, 2],
+      [second, 5],
+    ]);
+
+    resolveDataLinks([resolvedMetric], { metricKey: resolvedMetric.key, data: first });
+    resolveDataLinks([resolvedMetric], { metricKey: resolvedMetric.key, data: second });
+
+    expect(getLinks).toHaveBeenNthCalledWith(1, { valueRowIndex: 2 });
+    expect(getLinks).toHaveBeenNthCalledWith(2, { valueRowIndex: 5 });
+  });
+
+  it('does not fall back to X provenance for a stale point when point provenance exists', () => {
+    const current = point(1_000);
+    const stale = point(1_000);
+    const getLinks = jest.fn(() => []);
+    const resolvedMetric = metric(getLinks);
+    resolvedMetric.linkRowByPoint = new WeakMap([[current, 2]]);
+
+    expect(resolveDataLinks([resolvedMetric], { metricKey: resolvedMetric.key, data: stale }).links).toEqual([]);
+    expect(getLinks).not.toHaveBeenCalled();
   });
 
   it('isolates malformed user link suppliers', () => {

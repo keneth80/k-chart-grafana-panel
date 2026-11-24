@@ -121,6 +121,136 @@ test('should apply explicit Grafana field mappings', async ({ gotoPanelEditPage,
   await expect(panel).toContainText('Close');
 });
 
+test('should reduce dense SVG paths while preserving their visible range', async ({
+  gotoPanelEditPage,
+  readProvisionedDashboard,
+  request,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
+  const densePanel = dashboard.panels.find((candidate) => candidate.id === 1);
+  const denseTarget = densePanel?.targets[0] as { rawFrameContent?: string } | undefined;
+  if (!densePanel || !denseTarget) {
+    throw new Error('The provisioned line panel is missing its raw-frame target.');
+  }
+
+  const pointCount = 12000;
+  const spikeIndex = Math.floor(pointCount * 0.45);
+  denseTarget.rawFrameContent = JSON.stringify([
+    {
+      columns: [
+        { text: 'Time', type: 'time' },
+        { text: 'Close', type: 'number' },
+      ],
+      rows: Array.from({ length: pointCount }, (_, index) => [
+        1609459200000 + index * 1000,
+        index === spikeIndex ? 160 : index === spikeIndex + 1 ? 40 : 100 + Math.sin(index / 30) * 8,
+      ]),
+    },
+  ]);
+  densePanel.options = { ...densePanel.options, curve: false, downsample: false };
+  const dashboardUid = `kchart-downsample-${Date.now()}`;
+  Object.assign(dashboard, {
+    id: null,
+    title: `KChart downsampling ${Date.now()}`,
+    uid: dashboardUid,
+    version: 0,
+  });
+  const createDashboard = await request.post('/api/dashboards/db', {
+    data: { dashboard, overwrite: false },
+  });
+  expect(createDashboard.ok(), await createDashboard.text()).toBe(true);
+
+  try {
+    const panelEditPage = await gotoPanelEditPage({ dashboard, id: '1' });
+    const options = panelEditPage.getCustomOptions('KChart Panel');
+    const panel = panelEditPage.panel.locator.getByTestId('kchart-panel');
+    const line = panel.locator('path.kchart-grafana-series-0');
+    const readRenderedLine = () =>
+      line.evaluate((element) => {
+        const path = element as SVGPathElement;
+        const pathData = path.getAttribute('d') ?? '';
+        const bounds = path.getBBox();
+        const start = path.getPointAtLength(0);
+        const end = path.getPointAtLength(path.getTotalLength());
+        return {
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+          end: { x: end.x, y: end.y },
+          pathData,
+          renderedPointCount: (pathData.match(/-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi) ?? []).length / 2,
+          start: { x: start.x, y: start.y },
+        };
+      });
+
+    await expect(line).toBeVisible();
+    const fullResolution = await readRenderedLine();
+    expect(fullResolution.renderedPointCount).toBeGreaterThan(pointCount * 0.9);
+
+    await options.getSwitch('Enable downsampling').check();
+    await options.getRadioGroup('Downsampling strategy').check('Pixel min/max');
+    const pointsPerPixel = options.getSliderInput('Points per pixel');
+    await pointsPerPixel.fill('1');
+    await pointsPerPixel.press('Enter');
+
+    await expect.poll(async () => (await readRenderedLine()).pathData).not.toBe(fullResolution.pathData);
+    const downsampled = await readRenderedLine();
+    expect(downsampled.renderedPointCount).toBeLessThan(fullResolution.renderedPointCount / 2);
+    expect(downsampled.start.x).toBeCloseTo(fullResolution.start.x, 3);
+    expect(downsampled.start.y).toBeCloseTo(fullResolution.start.y, 3);
+    expect(downsampled.end.x).toBeCloseTo(fullResolution.end.x, 3);
+    expect(downsampled.end.y).toBeCloseTo(fullResolution.end.y, 3);
+    expect(downsampled.bounds.y).toBeCloseTo(fullResolution.bounds.y, 3);
+    expect(downsampled.bounds.height).toBeCloseTo(fullResolution.bounds.height, 3);
+  } finally {
+    await request.delete(`/api/dashboards/uid/${dashboardUid}`);
+  }
+});
+
+test('should update the Grafana time range only after selection zoom is enabled', async ({
+  gotoPanelEditPage,
+  page,
+  readProvisionedDashboard,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
+  const panelEditPage = await gotoPanelEditPage({ dashboard, id: '1' });
+  const panel = panelEditPage.panel.locator.getByTestId('kchart-panel');
+  const overlay = panel.locator('rect.kchart-tooltip-overlay');
+  const timeRangeButton = page.getByRole('button', { name: /^Time range selected:/ });
+  const xAxisTickLabels = panel.locator('.kchart-axis-bottom .tick text');
+  const dragAcrossRange = async () => {
+    const box = await overlay.boundingBox();
+    if (!box) {
+      throw new Error('The KChart interaction overlay was not rendered.');
+    }
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.2, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.7, y, { steps: 10 });
+  };
+
+  await expect(overlay).toBeVisible();
+  await expect(timeRangeButton).toBeVisible();
+  const initialTimeRange = await timeRangeButton.innerText();
+  const initialTickLabels = await xAxisTickLabels.allTextContents();
+  expect(initialTickLabels.length).toBeGreaterThan(1);
+
+  await dragAcrossRange();
+  await expect(panel.locator('rect.kchart-zoom-selection')).toHaveCount(0);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await expect(timeRangeButton).toHaveText(initialTimeRange);
+  expect(await xAxisTickLabels.allTextContents()).toEqual(initialTickLabels);
+
+  await panelEditPage.getCustomOptions('Interaction').getSwitch('Drag to zoom time range').check();
+  await dragAcrossRange();
+  const selection = panel.locator('rect.kchart-zoom-selection');
+  await expect(selection).toHaveCount(1);
+  expect(Number(await selection.getAttribute('width'))).toBeGreaterThan(8);
+  await page.mouse.up();
+
+  await expect.poll(() => timeRangeButton.innerText()).not.toBe(initialTimeRange);
+  await expect.poll(() => xAxisTickLabels.allTextContents()).not.toEqual(initialTickLabels);
+});
+
 test('should apply Grafana field styles and KChart axis options', async ({
   gotoPanelEditPage,
   page,

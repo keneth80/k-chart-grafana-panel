@@ -8,6 +8,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const plugin = JSON.parse(fs.readFileSync(path.join(root, 'src/plugin.json'), 'utf8'));
 const cliArguments = process.argv.slice(2);
 const useDocker = cliArguments.includes('--docker');
+const validatorImage = process.env.PLUGIN_VALIDATOR_IMAGE ?? 'grafana/plugin-validator-cli';
 const archiveArgument = cliArguments.find((argument) => argument !== '--docker');
 const archivePath = path.resolve(
   root,
@@ -36,7 +37,7 @@ const args = useDocker
       '-v',
       `${archivePath}:/archive.zip:ro`,
       ...(githubSourceUri ? [] : ['-v', `${root}:/source_code:ro`, '--tmpfs', '/source_code/node_modules']),
-      'grafana/plugin-validator-cli',
+      validatorImage,
       '-sourceCodeUri',
       sourceCodeUri,
       ...strictArguments,

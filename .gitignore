@@ -51,5 +51,6 @@ ci/
 .claude/
 .codebase-memory/
 .codex/
+.omc/
 .config/local/
 .cprc.json

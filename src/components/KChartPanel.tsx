@@ -35,6 +35,8 @@ import {
 } from '../kchart/chartTypes';
 import {
   buildKChartDataModel,
+  findNearestMetricPoint,
+  getMetricPointIndex,
   KCHART_BASELINE_FIELD,
   type KChartDataModel,
   type KChartMetric,
@@ -46,11 +48,11 @@ import {
   resolveDataLinks,
   type KChartDataLinkTarget,
 } from '../kchart/dataLinks';
+import { resolveDownsampleOptions } from '../kchart/downsample';
 import {
   formatConfiguredValue,
   formatXAxisValue,
   resolveAxisBounds,
-  resolveMetricColorValue,
   resolveThresholdGuideLines,
   sharedYAxisWarning,
 } from '../kchart/fieldConfig';
@@ -69,6 +71,7 @@ import {
   supportsWebglFallback,
   type KChartRenderPhase,
 } from '../kchart/renderRecovery';
+import { timeRangeFromDomain } from '../kchart/timeRange';
 import type { KChartPanelOptions } from '../types';
 
 interface Props extends PanelProps<KChartPanelOptions> {}
@@ -124,11 +127,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
     color: ${theme.colors.text.secondary};
   `,
   state: css`
+    position: absolute;
+    z-index: 11;
+    inset: 0;
     display: grid;
     width: 100%;
     height: 100%;
     padding: ${theme.spacing(2)};
     place-items: center;
+    background: ${theme.colors.background.canvas};
 
     > * {
       width: min(520px, 100%);
@@ -219,14 +226,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
 
 const palette = ['blue', 'green', 'orange', 'red', 'purple', 'yellow', 'light-blue', 'semi-dark-green'];
 
-const seriesColor = (metric: KChartMetric, index: number, theme: GrafanaTheme2, data: KChartPanelPoint[]): string => {
+const seriesColor = (metric: KChartMetric, index: number, theme: GrafanaTheme2): string => {
   if (metric.colorMode === 'fixed' && metric.color) {
     return theme.visualization.getColorByName(metric.color);
   }
 
-  // Grafana's display processor resolves both palette and by-value modes. Passing
-  // the configured series statistic also keeps threshold/continuous modes correct.
-  const colorValue = resolveMetricColorValue(data, metric) ?? 0;
+  // The data model caches by-value statistics. Palette modes use a stable value
+  // without scanning series data during style resolution.
+  const colorValue = metric.colorValue ?? 0;
   let displayColor: string | undefined;
   try {
     displayColor = metric.display?.(colorValue)?.color;
@@ -238,59 +245,48 @@ const seriesColor = (metric: KChartMetric, index: number, theme: GrafanaTheme2, 
 
 const comparableX = (value: Date | number): number => (value instanceof Date ? value.getTime() : value);
 
-const indexedTooltip = (metric: KChartMetric) => (context: KChartSeriesTooltipContext<KChartPanelPoint>) => {
-  const xScale = context.scales.find((scale) => scale.field === '__x')?.scale;
-  const yScale = (
-    context.scales.find((scale) => scale.field === metric.key) ??
-    context.scales.find((scale) => scale.placement === 'left' || scale.placement === 'right')
-  )?.scale;
-  if (!xScale || !yScale || typeof xScale.invert !== 'function' || context.data.length === 0) {
-    return undefined;
-  }
-
-  const inverted = xScale.invert(context.mouseX) as Date | number;
-  const target = comparableX(inverted);
-  let low = 0;
-  let high = context.data.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (comparableX(context.data[middle].__x) < target) {
-      low = middle + 1;
-    } else {
-      high = middle;
+const indexedTooltip = (metric: KChartMetric) => {
+  return (context: KChartSeriesTooltipContext<KChartPanelPoint>) => {
+    const xScale = context.scales.find((scale) => scale.field === '__x')?.scale;
+    const yScale = (
+      context.scales.find((scale) => scale.field === metric.key) ??
+      context.scales.find((scale) => scale.placement === 'left' || scale.placement === 'right')
+    )?.scale;
+    if (!xScale || !yScale || typeof xScale.invert !== 'function' || context.data.length === 0) {
+      return undefined;
     }
-  }
 
-  let nearest:
-    | {
-        data: KChartPanelPoint;
-        x: number;
-        y: number;
-        distance: number;
-      }
-    | undefined;
-  const start = Math.max(0, low - 2);
-  const end = Math.min(context.data.length - 1, low + 2);
-  for (let index = start; index <= end; index += 1) {
-    const point = context.data[index];
-    const value = point[metric.key];
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      continue;
+    const pointIndex = getMetricPointIndex(context.data, metric.key) ?? metric.pointIndex;
+    if (!pointIndex || pointIndex.finitePoints.length === 0) {
+      return undefined;
     }
-    const x = Number(xScale(point.__x));
-    const y = Number(yScale(value));
-    const distance = Math.hypot(x - context.mouseX, y - context.mouseY);
-    if (!nearest || distance < nearest.distance) {
-      nearest = { data: point, x, y, distance };
-    }
-  }
 
-  return nearest
-    ? {
-        ...nearest,
-        color: context.color,
-      }
-    : undefined;
+    const inverted = xScale.invert(context.mouseX) as Date | number;
+    const target = comparableX(inverted);
+    const nearest = findNearestMetricPoint(
+      pointIndex,
+      metric.key,
+      target,
+      context.mouseX,
+      context.mouseY,
+      xScale,
+      yScale
+    );
+
+    return nearest
+      ? {
+          ...nearest,
+          color: context.color,
+        }
+      : undefined;
+  };
+};
+
+const resolveSeriesStyleKey = (model: KChartDataModel, options: KChartPanelOptions, theme: GrafanaTheme2): string => {
+  if ((options.chartType ?? 'line') === 'candlestick') {
+    return 'candlestick';
+  }
+  return JSON.stringify(model.metrics.map((metric, index) => seriesColor(metric, index, theme)));
 };
 
 type TooltipTargetHandler = (metric: KChartMetric, data: KChartPanelPoint) => void;
@@ -299,8 +295,7 @@ const createMetricSeries = (
   metric: KChartMetric,
   index: number,
   options: KChartPanelOptions,
-  theme: GrafanaTheme2,
-  data: KChartPanelPoint[]
+  theme: GrafanaTheme2
 ): KChartSeries<KChartPanelPoint> => {
   const chartType = options.chartType ?? 'line';
   const common = {
@@ -308,8 +303,13 @@ const createMetricSeries = (
     displayName: metric.displayName,
     xField: '__x' as const,
     yField: metric.key,
-    color: seriesColor(metric, index, theme, data),
-    downsample: options.downsample,
+    color: seriesColor(metric, index, theme),
+    downsample: resolveDownsampleOptions(
+      options.downsample,
+      options.downsampleStrategy,
+      options.downsamplePointsPerPixel,
+      chartType
+    ),
   };
 
   let series: KChartSeries<KChartPanelPoint>;
@@ -375,7 +375,7 @@ const createChartSeries = (
       field: metric.key,
       // The invisible separator keeps duplicate Grafana display names addressable.
       label: `${metric.displayName}\u2063${index}`,
-      color: seriesColor(metric, index, theme, model.data),
+      color: seriesColor(metric, index, theme),
     }));
     const grouped = createGroupedColumnSeries<KChartPanelPoint>({
       selector: 'kchart-grafana-columns',
@@ -470,7 +470,7 @@ const createChartSeries = (
     ];
   }
 
-  return model.metrics.map((metric, index) => createMetricSeries(metric, index, options, theme, model.data));
+  return model.metrics.map((metric, index) => createMetricSeries(metric, index, options, theme));
 };
 
 const escapeHtml = (value: unknown): string =>
@@ -571,10 +571,12 @@ const KChartPanelContent: React.FC<Props> = ({
   id,
   timeRange,
   timeZone,
+  onChangeTimeRange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<KChartController<KChartPanelPoint> | null>(null);
   const renderedDataRef = useRef<KChartPanelPoint[] | null>(null);
+  const renderedSeriesStyleKeyRef = useRef<string>();
   const activeRendererRef = useRef(options.renderer);
   const recoveringRef = useRef(false);
   const rendererOverrideRef = useRef<KChartPanelOptions['renderer']>();
@@ -596,6 +598,7 @@ const KChartPanelContent: React.FC<Props> = ({
       xField: options.xField,
       yField: chartType === 'candlestick' ? undefined : options.yField,
       seriesField: chartType === 'candlestick' ? undefined : options.seriesField,
+      preserveDuplicateX: chartType === 'scatter',
     });
   }, [chartType, data.series, fieldConfig, options.nullMode, options.seriesField, options.xField, options.yField]);
   const renderModel = useMemo(() => {
@@ -642,15 +645,37 @@ const KChartPanelContent: React.FC<Props> = ({
     () => resolveDataLinks(model.metrics, dataLinkTarget),
     [dataLinkTarget, model.metrics]
   );
-  const renderContextRef = useRef({ model: renderModel, options, theme, width, height, timeRange, timeZone });
+  const renderContextRef = useRef({
+    model: renderModel,
+    options,
+    theme,
+    width,
+    height,
+    timeRange,
+    timeZone,
+    onChangeTimeRange,
+  });
   const renderedSizeRef = useRef({ width, height });
   const xTickCount = Math.max(2, Math.floor(width / 110));
   const yTickCount = Math.max(2, Math.floor(height / 70));
   const timeRangeFrom = timeRange.from.valueOf();
   const timeRangeTo = timeRange.to.valueOf();
+  const seriesStyleKey = useMemo(
+    () => resolveSeriesStyleKey(renderModel, options, theme),
+    [options, renderModel, theme]
+  );
 
   useLayoutEffect(() => {
-    renderContextRef.current = { model: renderModel, options, theme, width, height, timeRange, timeZone };
+    renderContextRef.current = {
+      model: renderModel,
+      options,
+      theme,
+      width,
+      height,
+      timeRange,
+      timeZone,
+      onChangeTimeRange,
+    };
   });
 
   useLayoutEffect(() => {
@@ -668,9 +693,12 @@ const KChartPanelContent: React.FC<Props> = ({
         curve: options.curve,
         lineWidth: options.lineWidth,
         downsample: options.downsample,
+        downsampleStrategy: options.downsampleStrategy,
+        downsamplePointsPerPixel: options.downsamplePointsPerPixel,
         showLegend: options.showLegend,
         showGrid: options.showGrid,
         showTooltip: options.showTooltip,
+        enableTimeRangeZoom: options.enableTimeRangeZoom,
         animation: options.animation,
         openField: options.openField,
         highField: options.highField,
@@ -681,6 +709,7 @@ const KChartPanelContent: React.FC<Props> = ({
         xAxisFormat: options.xAxisFormat,
         showThresholds: options.showThresholds,
         xType: model.xType,
+        hasFiniteData: model.hasFiniteData,
         xField: model.xField,
         metrics: model.metrics,
         theme: theme.isDark,
@@ -689,18 +718,21 @@ const KChartPanelContent: React.FC<Props> = ({
         timeRangeFrom,
         timeRangeTo,
         timeZone,
-        layoutWidth: Math.round(width),
+        layoutWidth: width,
         retryGeneration,
       }),
     [
       chartType,
       model.metrics,
+      model.hasFiniteData,
       model.xField,
       model.xType,
       options.animation,
       options.closeField,
       options.curve,
       options.downsample,
+      options.downsamplePointsPerPixel,
+      options.downsampleStrategy,
       options.highField,
       options.lineWidth,
       options.lowField,
@@ -710,6 +742,7 @@ const KChartPanelContent: React.FC<Props> = ({
       options.showLegend,
       options.showThresholds,
       options.showTooltip,
+      options.enableTimeRangeZoom,
       options.xAxisFormat,
       options.xAxisTitle,
       options.yAxisTitle,
@@ -717,10 +750,10 @@ const KChartPanelContent: React.FC<Props> = ({
       timeZone,
       xTickCount,
       yTickCount,
+      width,
       timeRangeFrom,
       timeRangeTo,
       retryGeneration,
-      width,
     ]
   );
 
@@ -781,7 +814,7 @@ const KChartPanelContent: React.FC<Props> = ({
     };
     const container = containerRef.current;
     const context = renderContextRef.current;
-    if (!container || context.model.metrics.length === 0 || chartError) {
+    if (!container || context.model.metrics.length === 0 || !context.model.hasFiniteData || chartError) {
       return undefined;
     }
 
@@ -820,11 +853,7 @@ const KChartPanelContent: React.FC<Props> = ({
               ? []
               : resolveThresholdGuideLines(context.model, contextDomainMetrics, context.theme);
           const thresholdGuideLines = fitGuideLinesToChartWidth(resolvedThresholdGuideLines, context.width);
-          const leftMargin = resolveChartLeftMargin(
-            renderOptions.yAxisTitle,
-            thresholdGuideLines,
-            context.width
-          );
+          const leftMargin = resolveChartLeftMargin(renderOptions.yAxisTitle, thresholdGuideLines, context.width);
           const chart = createKChart<KChartPanelPoint>({
             selector: container,
             data: context.model.data,
@@ -886,6 +915,20 @@ const KChartPanelContent: React.FC<Props> = ({
               visible: renderOptions.showThresholds !== false,
               y: thresholdGuideLines,
             },
+            zoom:
+              renderOptions.enableTimeRangeZoom && context.model.xType === 'time'
+                ? {
+                    enabled: true,
+                    mode: 'select',
+                    direction: 'x',
+                    onZoom: ({ xDomain }) => {
+                      const selectedRange = timeRangeFromDomain(xDomain);
+                      if (selectedRange) {
+                        context.onChangeTimeRange(selectedRange);
+                      }
+                    },
+                  }
+                : undefined,
             animation: renderOptions.animation,
             className: context.theme.isDark ? 'kchart-theme-dark' : 'kchart-theme-light',
           });
@@ -943,6 +986,7 @@ const KChartPanelContent: React.FC<Props> = ({
 
     controllerRef.current = controller;
     renderedDataRef.current = context.model.data;
+    renderedSeriesStyleKeyRef.current = resolveSeriesStyleKey(context.model, context.options, context.theme);
     renderedSizeRef.current = { width: context.width, height: context.height };
     const webglCanvases =
       renderAttempt.activeRenderer === 'webgl'
@@ -987,6 +1031,28 @@ const KChartPanelContent: React.FC<Props> = ({
 
   useEffect(() => {
     const controller = controllerRef.current;
+    if (!controller || renderedSeriesStyleKeyRef.current === seriesStyleKey) {
+      return;
+    }
+    const context = renderContextRef.current;
+    try {
+      controller.updateSeries(
+        createChartSeries(
+          context.model,
+          { ...context.options, renderer: activeRendererRef.current },
+          context.theme,
+          context.timeZone,
+          handleTooltipTarget
+        )
+      );
+      renderedSeriesStyleKeyRef.current = seriesStyleKey;
+    } catch (error) {
+      recoverFromLifecycleFailure('update', error);
+    }
+  }, [handleTooltipTarget, recoverFromLifecycleFailure, seriesStyleKey]);
+
+  useEffect(() => {
+    const controller = controllerRef.current;
     if (!controller || (renderedSizeRef.current.width === width && renderedSizeRef.current.height === height)) {
       return;
     }
@@ -1004,39 +1070,35 @@ const KChartPanelContent: React.FC<Props> = ({
       data.state === LoadingState.Loading ||
       data.state === LoadingState.Streaming);
 
-  if (waitingForInitialData) {
-    return (
-      <div className={styles.state} style={{ width, height }} data-testid="kchart-loading-state">
-        <LoadingPlaceholder
-          text={data.state === LoadingState.Streaming ? 'Waiting for stream data...' : 'Loading KChart data...'}
-        />
-      </div>
-    );
-  }
-
-  if (data.state === LoadingState.Error || data.series.length === 0) {
-    return <PanelDataErrorView fieldConfig={fieldConfig} panelId={id} data={data} />;
-  }
-
-  if (chartError) {
-    return (
-      <div className={styles.state} style={{ width, height }} data-testid="kchart-configuration-error">
-        <Alert title="KChart configuration error" severity="warning">
-          {chartError}
-        </Alert>
-      </div>
-    );
-  }
-
-  if (model.metrics.length === 0) {
-    return (
-      <div className={styles.state} style={{ width, height }} data-testid="kchart-empty-state">
-        <Alert title="No numeric fields" severity="info">
-          Add at least one numeric field to render a KChart panel.
-        </Alert>
-      </div>
-    );
-  }
+  const statusOverlay = waitingForInitialData ? (
+    <div className={styles.state} data-testid="kchart-loading-state">
+      <LoadingPlaceholder
+        text={data.state === LoadingState.Streaming ? 'Waiting for stream data...' : 'Loading KChart data...'}
+      />
+    </div>
+  ) : data.state === LoadingState.Error || data.series.length === 0 ? (
+    <div className={styles.state} data-testid="kchart-data-error-state">
+      <PanelDataErrorView fieldConfig={fieldConfig} panelId={id} data={data} />
+    </div>
+  ) : chartError ? (
+    <div className={styles.state} data-testid="kchart-configuration-error">
+      <Alert title="KChart configuration error" severity="warning">
+        {chartError}
+      </Alert>
+    </div>
+  ) : model.metrics.length === 0 ? (
+    <div className={styles.state} data-testid="kchart-empty-state">
+      <Alert title="No numeric fields" severity="info">
+        Add at least one numeric field to render a KChart panel.
+      </Alert>
+    </div>
+  ) : !model.hasFiniteData ? (
+    <div className={styles.state} data-testid="kchart-empty-state">
+      <Alert title="No numeric values" severity="info">
+        The selected fields do not contain finite numeric values in the current range.
+      </Alert>
+    </div>
+  ) : undefined;
 
   return (
     <div className={styles.wrapper} style={{ width, height }}>
@@ -1046,24 +1108,27 @@ const KChartPanelContent: React.FC<Props> = ({
         data-chart-type={chartType}
         data-renderer={activeRenderer}
         data-requested-renderer={options.renderer}
+        data-downsample-strategy={options.downsample ? (options.downsampleStrategy ?? 'auto') : 'off'}
+        data-time-range-zoom={Boolean(options.enableTimeRangeZoom && model.xType === 'time')}
         className={styles.chart}
       />
-      {data.state === LoadingState.Loading && !fallbackNotice && (
+      {statusOverlay}
+      {!statusOverlay && data.state === LoadingState.Loading && !fallbackNotice && (
         <div className={styles.loading} data-testid="kchart-updating-state">
           <LoadingPlaceholder text="Updating..." />
         </div>
       )}
-      {fallbackNotice && (
+      {!statusOverlay && fallbackNotice && (
         <div className={styles.fallback} data-testid="kchart-renderer-fallback" role="status">
           {fallbackNotice}
         </div>
       )}
-      {axisWarning && (
+      {!statusOverlay && axisWarning && (
         <div className={styles.warning} data-testid="kchart-shared-axis-warning">
           {axisWarning}
         </div>
       )}
-      {activeDataLinks.links.length > 0 && (
+      {!statusOverlay && activeDataLinks.links.length > 0 && (
         <DataLinksContextMenu
           links={() => activeDataLinks.links}
           style={{ position: 'absolute', zIndex: 9, right: 8, bottom: 8 }}
@@ -1083,7 +1148,7 @@ const KChartPanelContent: React.FC<Props> = ({
           }}
         </DataLinksContextMenu>
       )}
-      {runtimeIssue && (
+      {!statusOverlay && runtimeIssue && (
         <div className={styles.runtimeError} data-testid="kchart-runtime-error">
           <Alert
             title={`KChart ${runtimeIssue.phase} error`}

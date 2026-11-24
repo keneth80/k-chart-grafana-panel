@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.6 (2026-11-24)
+
+- Updated `@keneth80/k-chart` from 1.26.0 to 1.28.0 and exposed adaptive
+  Auto, pixel min/max, and LTTB downsampling with configurable points per pixel,
+  while migrating dashboards saved with the earlier boolean option to preserve
+  their LTTB behavior.
+- Added an opt-in time-axis drag selection that updates Grafana's dashboard
+  time range through the standard panel callback.
+- Preserved duplicate Scatter X values, stable-sorted only out-of-order input,
+  and kept point-level Data Links bound to their original source rows.
+- Improved sparse-series tooltip lookup and distinguished all-null data from
+  finite chart data without discarding line gaps.
+- Kept chart controllers mounted through loading and query-error overlays,
+  and updated dynamic series colors only when their resolved style changes.
+- Hardened tagged releases with exact tag/version checks, quality gates on the
+  tagged commit, pinned workflow actions and images, Grafana 12.3/13.1 browser
+  tests, provenance attestation, and incomplete-draft cleanup.
+
 ## 1.0.5 (2026-10-25)
 
 - Reissued the approved plugin through the protected Grafana release

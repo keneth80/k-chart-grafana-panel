@@ -32,13 +32,22 @@ export interface KChartValueConfig {
   derivedSeries?: boolean;
 }
 
+export interface KChartMetricPointIndex {
+  finitePoints: KChartPanelPoint[];
+  duplicatePointsByX: ReadonlyMap<number, KChartPanelPoint[]>;
+}
+
 export interface KChartMetric extends KChartValueConfig {
   key: keyof KChartPanelPoint & string;
   fieldName: string;
   displayName: string;
+  finitePoints?: KChartPanelPoint[];
+  pointIndex?: KChartMetricPointIndex;
+  colorValue?: number;
   linkConfig?: FieldConfig;
   getLinks?: Field['getLinks'];
   linkRowByX?: Map<number, number>;
+  linkRowByPoint?: WeakMap<KChartPanelPoint, number>;
 }
 
 export interface KChartAxisField extends KChartValueConfig {
@@ -50,6 +59,7 @@ export interface KChartDataModel {
   data: KChartPanelPoint[];
   metrics: KChartMetric[];
   xType: 'time' | 'number';
+  hasFiniteData: boolean;
   xField?: KChartAxisField;
   error?: string;
 }
@@ -58,6 +68,7 @@ export interface KChartFieldMapping {
   xField?: string;
   yField?: string;
   seriesField?: string;
+  preserveDuplicateX?: boolean;
 }
 
 const valueAt = (field: Field, index: number): unknown => {
@@ -109,12 +120,13 @@ const valueConfig = (field: Field): KChartValueConfig => ({
   colorSeriesBy: field.config.color?.seriesBy,
 });
 
-const metricLinks = (field: Field): Pick<KChartMetric, 'linkConfig' | 'getLinks' | 'linkRowByX'> => {
+const metricLinks = (field: Field): Pick<KChartMetric, 'linkConfig' | 'getLinks' | 'linkRowByX' | 'linkRowByPoint'> => {
   const hasConfiguredLinks = (field.config.links?.length ?? 0) > 0;
   return {
     linkConfig: field.config,
     getLinks: hasConfiguredLinks ? field.getLinks : undefined,
     linkRowByX: hasConfiguredLinks ? new Map<number, number>() : undefined,
+    linkRowByPoint: hasConfiguredLinks ? new WeakMap<KChartPanelPoint, number>() : undefined,
   };
 };
 
@@ -142,6 +154,7 @@ const emptyModel = (xType: KChartDataModel['xType'], error: string): KChartDataM
   data: [],
   metrics: [],
   xType,
+  hasFiniteData: false,
   error,
 });
 
@@ -158,6 +171,184 @@ const categoryMetricKey = (identity: string, category: string): string => {
   return `__series_${identity.length}_${identity}_${encodedCategory.length}_${encodedCategory}`;
 };
 
+const comparableX = (point: KChartPanelPoint): number => (point.__x instanceof Date ? point.__x.getTime() : point.__x);
+
+const ensureSortedRows = (data: KChartPanelPoint[]): KChartPanelPoint[] => {
+  for (let index = 1; index < data.length; index += 1) {
+    if (comparableX(data[index - 1]) > comparableX(data[index])) {
+      return data.sort((left, right) => comparableX(left) - comparableX(right));
+    }
+  }
+  return data;
+};
+
+const usesValueBasedColor = (metric: KChartMetric): boolean =>
+  Boolean(metric.colorMode && metric.colorMode !== 'fixed' && !metric.colorMode.startsWith('palette-'));
+
+const pointIndexesByData = new WeakMap<KChartPanelPoint[], ReadonlyMap<string, KChartMetricPointIndex>>();
+
+export const getMetricPointIndex = (data: KChartPanelPoint[], metricKey: string): KChartMetricPointIndex | undefined =>
+  pointIndexesByData.get(data)?.get(metricKey);
+
+export const getFiniteMetricPoints = (data: KChartPanelPoint[], metricKey: string): KChartPanelPoint[] | undefined =>
+  getMetricPointIndex(data, metricKey)?.finitePoints;
+
+type KChartPositionScale = (value: Date | number) => unknown;
+
+export const findNearestMetricPoint = (
+  pointIndex: KChartMetricPointIndex,
+  metricKey: string,
+  targetX: number,
+  mouseX: number,
+  mouseY: number,
+  xScale: KChartPositionScale,
+  yScale: KChartPositionScale
+): { data: KChartPanelPoint; x: number; y: number; distance: number } | undefined => {
+  const finitePoints = pointIndex.finitePoints;
+  let low = 0;
+  let high = finitePoints.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (comparableX(finitePoints[middle]) < targetX) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  let nearest: { data: KChartPanelPoint; x: number; y: number; distance: number } | undefined;
+  let previousCandidateX: number | undefined;
+  for (let xOffset = 0; xOffset < 2; xOffset += 1) {
+    const candidateIndex = xOffset === 0 ? low - 1 : low;
+    if (candidateIndex < 0 || candidateIndex >= finitePoints.length) {
+      continue;
+    }
+    const point = finitePoints[candidateIndex];
+    const candidateX = comparableX(point);
+    if (candidateX === previousCandidateX) {
+      continue;
+    }
+    previousCandidateX = candidateX;
+
+    const x = Number(xScale(point.__x));
+    const pointsByY = pointIndex.duplicatePointsByX.get(candidateX);
+    if (!pointsByY) {
+      const y = Number(yScale(point[metricKey] as number));
+      const distance = Math.hypot(x - mouseX, y - mouseY);
+      if (!nearest || distance < nearest.distance) {
+        nearest = { data: point, x, y, distance };
+      }
+      continue;
+    }
+
+    const firstY = Number(yScale(pointsByY[0][metricKey] as number));
+    const lastY = Number(yScale(pointsByY[pointsByY.length - 1][metricKey] as number));
+    const ascending = firstY <= lastY;
+    let yLow = 0;
+    let yHigh = pointsByY.length;
+    while (yLow < yHigh) {
+      const middle = (yLow + yHigh) >>> 1;
+      const projected = Number(yScale(pointsByY[middle][metricKey] as number));
+      if (ascending ? projected < mouseY : projected > mouseY) {
+        yLow = middle + 1;
+      } else {
+        yHigh = middle;
+      }
+    }
+
+    for (let yOffset = 0; yOffset < 2; yOffset += 1) {
+      const yIndex = yOffset === 0 ? yLow - 1 : yLow;
+      if (yIndex < 0 || yIndex >= pointsByY.length) {
+        continue;
+      }
+      const candidate = pointsByY[yIndex];
+      const y = Number(yScale(candidate[metricKey] as number));
+      const distance = Math.hypot(x - mouseX, y - mouseY);
+      if (!nearest || distance < nearest.distance) {
+        nearest = { data: candidate, x, y, distance };
+      }
+    }
+  }
+
+  return nearest;
+};
+
+const populateMetricCaches = (data: KChartPanelPoint[], metrics: KChartMetric[]): boolean => {
+  let hasFiniteData = false;
+  const pointIndexesByMetric = new Map<string, KChartMetricPointIndex>();
+  const accumulators = new Map(
+    metrics.map((metric) => [
+      metric.key,
+      {
+        metric,
+        finitePoints: [] as KChartPanelPoint[],
+        colorValue: undefined as number | undefined,
+      },
+    ])
+  );
+
+  // Iterate values that actually exist on each row. Long-format data usually
+  // has one metric key per row, so this remains linear instead of N rows x M
+  // derived categories.
+  for (const point of data) {
+    for (const key in point) {
+      const accumulator = accumulators.get(key);
+      if (!accumulator) {
+        continue;
+      }
+      const value = point[key];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        continue;
+      }
+      accumulator.finitePoints.push(point);
+      hasFiniteData = true;
+      if (usesValueBasedColor(accumulator.metric)) {
+        const seriesBy = accumulator.metric.colorSeriesBy ?? 'last';
+        accumulator.colorValue =
+          accumulator.colorValue === undefined
+            ? value
+            : seriesBy === 'min'
+              ? Math.min(accumulator.colorValue, value)
+              : seriesBy === 'max'
+                ? Math.max(accumulator.colorValue, value)
+                : value;
+      }
+    }
+  }
+
+  for (const metric of metrics) {
+    const accumulator = accumulators.get(metric.key)!;
+    const finitePoints = accumulator.finitePoints;
+    const duplicatePointsByX = new Map<number, KChartPanelPoint[]>();
+    for (let start = 0; start < finitePoints.length;) {
+      const x = comparableX(finitePoints[start]);
+      let end = start + 1;
+      while (end < finitePoints.length && comparableX(finitePoints[end]) === x) {
+        end += 1;
+      }
+      if (end - start > 1) {
+        duplicatePointsByX.set(
+          x,
+          finitePoints
+            .slice(start, end)
+            .sort((left, right) => (left[metric.key] as number) - (right[metric.key] as number))
+        );
+      }
+      start = end;
+    }
+    const pointIndex = { finitePoints, duplicatePointsByX };
+    pointIndexesByMetric.set(metric.key, pointIndex);
+    Object.defineProperties(metric, {
+      finitePoints: { value: finitePoints, enumerable: false, configurable: true },
+      pointIndex: { value: pointIndex, enumerable: false, configurable: true },
+      colorValue: { value: accumulator.colorValue, enumerable: false, configurable: true },
+    });
+  }
+
+  pointIndexesByData.set(data, pointIndexesByMetric);
+  return hasFiniteData;
+};
+
 export const buildKChartDataModel = (
   frames: DataFrame[],
   nullMode: KChartNullMode,
@@ -166,6 +357,7 @@ export const buildKChartDataModel = (
   const xSelection = normalizedSelection(mapping.xField);
   const ySelection = normalizedSelection(mapping.yField);
   const seriesSelection = normalizedSelection(mapping.seriesField);
+  const preserveDuplicateX = mapping.preserveDuplicateX === true;
   const isAxisField = (field: Field) => field.type === FieldType.time || field.type === FieldType.number;
   const selectedXFields = frames.map((frame) => findField(frame, frames, xSelection, isAxisField));
   const hasTimeField = xSelection
@@ -181,6 +373,7 @@ export const buildKChartDataModel = (
   }
 
   const rows = new Map<number, KChartPanelPoint>();
+  const duplicateRows: KChartPanelPoint[] = [];
   const metrics: KChartMetric[] = [];
   const compatibleFrames = frames.filter((frame) => {
     if (xSelection) {
@@ -200,7 +393,6 @@ export const buildKChartDataModel = (
   let matchedLongFormatFrame = !seriesSelection;
   let matchedDistinctYField = !ySelection;
   let matchedSameXYField = false;
-
   compatibleFrames.forEach((frame, frameIndex) => {
     const identityBase = frameIdentityBases[frameIndex];
     const identity =
@@ -260,7 +452,7 @@ export const buildKChartDataModel = (
 
       const xValue = resolvedTime ?? resolvedNumber ?? rowIndex;
       const xKey = resolvedTime ? resolvedTime.getTime() : Number(xValue);
-      const row = rows.get(xKey) ?? {
+      const row = (preserveDuplicateX ? undefined : rows.get(xKey)) ?? {
         __x: xValue,
         [KCHART_BASELINE_FIELD]: 0,
       };
@@ -286,8 +478,10 @@ export const buildKChartDataModel = (
             categoryMetrics.set(categoryKey, metric);
             metrics.push(metric);
           }
-          row[metric.key] = numericValue(valueAt(yField, rowIndex), nullMode);
+          const value = numericValue(valueAt(yField, rowIndex), nullMode);
+          row[metric.key] = value;
           metric.linkRowByX?.set(xKey, rowIndex);
+          metric.linkRowByPoint?.set(row, rowIndex);
           hasMetricValue = true;
         }
       }
@@ -296,12 +490,18 @@ export const buildKChartDataModel = (
         if (rowIndex >= field.values.length) {
           return;
         }
-        row[key] = numericValue(valueAt(field, rowIndex), nullMode);
+        const value = numericValue(valueAt(field, rowIndex), nullMode);
+        row[key] = value;
         metric.linkRowByX?.set(xKey, rowIndex);
+        metric.linkRowByPoint?.set(row, rowIndex);
         hasMetricValue = true;
       });
       if (hasMetricValue) {
-        rows.set(xKey, row);
+        if (preserveDuplicateX) {
+          duplicateRows.push(row);
+        } else {
+          rows.set(xKey, row);
+        }
       }
     }
   });
@@ -319,18 +519,18 @@ export const buildKChartDataModel = (
     return emptyModel(xType, 'X, Y and Series fields must exist in the same data frame.');
   }
 
+  const data = ensureSortedRows(preserveDuplicateX ? duplicateRows : Array.from(rows.values()));
+  const sortedMetrics = seriesSelection
+    ? [...metrics].sort(
+        (left, right) => left.displayName.localeCompare(right.displayName) || left.key.localeCompare(right.key)
+      )
+    : metrics;
+
   return {
-    data: Array.from(rows.values()).sort((left, right) => {
-      const leftValue = left.__x instanceof Date ? left.__x.getTime() : left.__x;
-      const rightValue = right.__x instanceof Date ? right.__x.getTime() : right.__x;
-      return leftValue - rightValue;
-    }),
-    metrics: seriesSelection
-      ? [...metrics].sort(
-          (left, right) => left.displayName.localeCompare(right.displayName) || left.key.localeCompare(right.key)
-        )
-      : metrics,
+    data,
+    metrics: sortedMetrics,
     xType,
+    hasFiniteData: populateMetricCaches(data, sortedMetrics),
     xField: resolvedXField,
   };
 };
