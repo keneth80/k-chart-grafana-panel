@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.9 (2026-11-24)
+
+- Split release browser coverage into a Grafana 12.3 installation/runtime
+  smoke gate and the complete editor, interaction, recovery, and Data Link
+  suite on the current supported Grafana version.
+
 ## 1.0.8 (2026-11-24)
 
 - Fixed the Grafana 12.3 release browser gate by keeping its plugin editor in
