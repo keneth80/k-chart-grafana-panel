@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.7 (2026-11-24)
+
+- Serialized the Grafana 12.3 release browser suite to avoid the minimum
+  supported server timing out while several option editors initialize at once;
+  the current Grafana suite remains parallel.
+
 ## 1.0.6 (2026-11-24)
 
 - Updated `@keneth80/k-chart` from 1.26.0 to 1.28.0 and exposed adaptive
